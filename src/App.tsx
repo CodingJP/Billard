@@ -11,15 +11,19 @@ import { Ranking } from './components/Ranking.tsx'
 import { computeRatings, ranking } from './lib/ratings.ts'
 import type { AppState } from './lib/types.ts'
 import { syncPushSubscription } from './push.ts'
+import { applyTheme, isDarkNow, loadTheme } from './theme.ts'
+import { BellIcon, ListIcon, MoonIcon, PlusIcon, SunIcon, TargetIcon, TrophyIcon, UserIcon } from './components/icons.tsx'
+import { ToastHost } from './components/ToastHost.tsx'
+import { Ball } from './components/ui.tsx'
 
 type Tab = 'ranking' | 'competitions' | 'duel' | 'games' | 'me'
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'ranking', label: 'Rangliste', icon: '🏆' },
-  { id: 'competitions', label: 'Wettkämpfe', icon: '🎯' },
-  { id: 'duel', label: 'Duell', icon: '＋' },
-  { id: 'games', label: 'Spiele', icon: '🎱' },
-  { id: 'me', label: 'Profil', icon: '👤' },
+const TABS: { id: Tab; label: string; icon: typeof TrophyIcon }[] = [
+  { id: 'ranking', label: 'Rangliste', icon: TrophyIcon },
+  { id: 'competitions', label: 'Cups', icon: TargetIcon },
+  { id: 'duel', label: 'Duell', icon: PlusIcon },
+  { id: 'games', label: 'Spiele', icon: ListIcon },
+  { id: 'me', label: 'Profil', icon: UserIcon },
 ]
 
 const isTab = (value: string | null): value is Tab => TABS.some((t) => t.id === value)
@@ -33,9 +37,9 @@ function tabFromUrl(url: string): Tab | null {
 const TITLES: Record<Tab, string> = {
   ranking: 'Rangliste',
   competitions: 'Wettkämpfe',
-  duel: 'Duell eintragen',
+  duel: 'Duell',
   games: 'Spiele',
-  me: 'Dein Profil',
+  me: 'Profil',
 }
 
 export default function App() {
@@ -45,6 +49,23 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(() => tabFromUrl(window.location.href) ?? 'ranking')
   const [profileId, setProfileId] = useState<number | null>(null)
   const [challengeToPlay, setChallengeToPlay] = useState<number | null>(null)
+  const [dark, setDark] = useState(isDarkNow)
+
+  useEffect(() => {
+    applyTheme(loadTheme())
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => setDark(isDarkNow())
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
+
+  const toggleTheme = () => {
+    const next = !dark
+    // Back to "follow the system" when the choice matches it anyway.
+    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    applyTheme(next === systemDark ? 'system' : next ? 'dark' : 'light')
+    setDark(next)
+  }
 
   useEffect(() => {
     if (tabFromUrl(window.location.href)) window.history.replaceState(null, '', '/')
@@ -109,13 +130,20 @@ export default function App() {
   }, [state])
 
   if (phase === 'loading') {
-    return <div className="flex min-h-screen items-center justify-center text-white/40">Lädt …</div>
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-pulse">
+          <Ball id={8} size="lg" />
+        </div>
+      </div>
+    )
   }
   if (phase === 'offline') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-white/70">Der Server ist gerade nicht erreichbar.</p>
-        <button className="text-felt-400" onClick={load}>
+        <Ball id={8} size="lg" />
+        <p className="text-muted">Der Server ist gerade nicht erreichbar.</p>
+        <button className="font-semibold underline underline-offset-4" onClick={load}>
           Erneut versuchen
         </button>
       </div>
@@ -146,6 +174,11 @@ export default function App() {
     window.scrollTo({ top: 0 })
   }
 
+  const openProfile = (id: number) => {
+    setProfileId(id)
+    window.scrollTo({ top: 0 })
+  }
+
   const profileIndex = rows.findIndex((r) => r.player.id === (profileId ?? (tab === 'me' ? me.id : -1)))
   const profile = profileIndex >= 0 ? rows[profileIndex] : null
   const showingOther = profileId !== null && profile
@@ -156,14 +189,31 @@ export default function App() {
     setPhase('auth')
   }
 
+  const iconButton = 'relative flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-surface text-fg transition hover:bg-surface-2'
+
   return (
     <div className="mx-auto flex min-h-screen max-w-lg flex-col">
-      <header className="sticky top-0 z-10 bg-felt-950/85 px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-3 backdrop-blur-lg">
-        <p className="text-xs font-semibold tracking-[0.25em] text-felt-400 uppercase">{state.appName}</p>
-        <h1 className="text-2xl font-bold">{showingOther ? 'Spielerprofil' : TITLES[tab]}</h1>
+      <header className="sticky top-0 z-10 flex items-end justify-between gap-3 bg-bg/85 px-4 pt-[max(1.1rem,env(safe-area-inset-top))] pb-3 backdrop-blur-lg">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase">{state.appName}</p>
+          <h1 className="mt-1 font-display text-[34px] leading-[0.9] font-extrabold uppercase">{showingOther ? 'Spieler' : TITLES[tab]}</h1>
+        </div>
+        <div className="flex shrink-0 gap-2 pb-0.5">
+          <button className={iconButton} onClick={toggleTheme} aria-label={dark ? 'Helles Design' : 'Dunkles Design'}>
+            {dark ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+          </button>
+          <button className={iconButton} onClick={() => go('games')} aria-label={toConfirm > 0 ? `${toConfirm} offen` : 'Spiele'}>
+            <BellIcon size={18} />
+            {toConfirm > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-bad px-1 font-mono text-[10px] font-semibold text-white ring-2 ring-bg">
+                {toConfirm}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
 
-      <main className="flex-1 px-4 pb-32">
+      <main key={showingOther ? `p${profileId}` : tab} className="view-in flex-1 px-4 pt-2 pb-32">
         {showingOther ? (
           <PlayerProfile
             stats={profile}
@@ -178,7 +228,7 @@ export default function App() {
         ) : tab === 'ranking' ? (
           <div className="space-y-4">
             <PushPrompt />
-            <Ranking rows={rows} meId={me.id} onSelect={setProfileId} />
+            <Ranking rows={rows} meId={me.id} onSelect={openProfile} />
           </div>
         ) : tab === 'competitions' ? (
           <CompetitionsScreen
@@ -235,31 +285,33 @@ export default function App() {
         ) : null}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-white/5 bg-felt-950/90 backdrop-blur-lg">
-        <div className="mx-auto grid max-w-lg grid-cols-5 pb-[env(safe-area-inset-bottom)]">
+      <ToastHost />
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/92 backdrop-blur-lg">
+        <div className="mx-auto grid max-w-lg grid-cols-5 px-1.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {TABS.map((t) => {
             const active = tab === t.id && !showingOther
+            const Icon = t.icon
             const duel = t.id === 'duel'
             return (
               <button
                 key={t.id}
                 onClick={() => go(t.id)}
-                className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${active ? 'text-felt-400' : 'text-white/50'}`}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex flex-col items-center gap-1 py-1 text-[10.5px] font-semibold transition ${active ? 'text-fg' : 'text-muted'}`}
               >
-                <span
-                  className={
-                    duel
-                      ? '-mt-4 flex h-12 w-12 items-center justify-center rounded-full bg-felt-500 text-2xl font-bold text-white shadow-[0_6px_24px_rgba(31,157,92,0.5)] ring-4 ring-felt-950'
-                      : 'text-xl leading-8'
-                  }
-                >
-                  {t.icon}
-                </span>
+                {duel ? (
+                  <span className={`flex h-[34px] w-12 items-center justify-center rounded-xl bg-strong text-strong-fg transition ${active ? 'ring-2 ring-accent ring-offset-2 ring-offset-surface' : ''}`}>
+                    <Icon size={20} className="[stroke-width:2.6]" />
+                  </span>
+                ) : (
+                  <span className="flex h-[34px] items-center">
+                    <Icon size={22} className={active ? '[stroke-width:2.4]' : ''} />
+                  </span>
+                )}
                 {t.label}
                 {t.id === 'games' && toConfirm > 0 && (
-                  <span className="absolute top-1.5 left-1/2 ml-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[11px] font-bold text-black">
-                    {toConfirm}
-                  </span>
+                  <span className="absolute top-0 left-1/2 ml-2 h-2.5 w-2.5 rounded-full bg-bad ring-2 ring-surface" />
                 )}
               </button>
             )
