@@ -1,124 +1,147 @@
-import { useState } from 'react'
-import { calculateElo } from '../lib/elo'
-import { DISCIPLINES, type Discipline, type Match, type PlayerStats } from '../lib/types'
-import { Avatar, Button, Card, Delta, EmptyState, SectionTitle } from './ui'
+import { useMemo, useState } from 'react'
+import type { NewMatchInput } from '../api.ts'
+import { openPairings } from '../lib/competition.ts'
+import { calculateElo } from '../lib/elo.ts'
+import { DISCIPLINES, type AppState, type Discipline, type PlayerStats } from '../lib/types.ts'
+import { Avatar, Badge, Button, Card, Delta, EmptyState, ErrorText, SectionTitle, Segmented, Stepper } from './ui.tsx'
 
-interface Result {
-  match: Match
-  deltaA: number
-  deltaB: number
+interface StageOption {
+  stageId: number
+  opponentId: number
+  label: string
+  raceTo: number
+  discipline: Discipline
 }
 
 export function NewMatch({
+  state,
   stats,
-  onSave,
-  onAddPlayers,
+  onSubmit,
+  onDone,
 }: {
+  state: AppState
   stats: PlayerStats[]
-  onSave: (m: Omit<Match, 'id' | 'playedAt'>) => Match
-  onAddPlayers: () => void
+  onSubmit: (input: NewMatchInput) => Promise<void>
+  onDone: () => void
 }) {
+  const me = state.me
+  const [opponentId, setOpponentId] = useState<number | null>(null)
+  const [stageOption, setStageOption] = useState<StageOption | null>(null)
   const [discipline, setDiscipline] = useState<Discipline>('8-Ball')
   const [raceTo, setRaceTo] = useState(5)
-  const [playerA, setPlayerA] = useState<string | null>(null)
-  const [playerB, setPlayerB] = useState<string | null>(null)
-  const [scoreA, setScoreA] = useState(0)
-  const [scoreB, setScoreB] = useState(0)
-  const [result, setResult] = useState<Result | null>(null)
+  const [rated, setRated] = useState(true)
+  const [own, setOwn] = useState(0)
+  const [other, setOther] = useState(0)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState<string | null>(null)
 
-  if (stats.length < 2) {
-    return (
-      <EmptyState
-        title="Mindestens zwei Spieler nötig"
-        text="Lege erst die Spieler an, dann kannst du Matches eintragen."
-        action={<Button onClick={onAddPlayers}>Spieler anlegen</Button>}
-      />
-    )
+  const stageOptions = useMemo(() => {
+    const list: StageOption[] = []
+    for (const comp of state.competitions) {
+      for (const stage of comp.stages) {
+        if (stage.status !== 'running') continue
+        for (const [a, b] of openPairings(stage, state.matches)) {
+          if (a !== me.id && b !== me.id) continue
+          list.push({
+            stageId: stage.id,
+            opponentId: a === me.id ? b : a,
+            label: `${comp.name} · ${stage.name}`,
+            raceTo: stage.raceTo,
+            discipline: comp.discipline,
+          })
+        }
+      }
+    }
+    return list
+  }, [state, me.id])
+
+  const opponents = stats.filter((s) => s.player.id !== me.id)
+  if (opponents.length === 0) {
+    return <EmptyState title="Noch keine Gegner" text="Sobald sich jemand über den QR-Code registriert, kannst du Duelle eintragen." />
   }
 
-  const a = stats.find((s) => s.player.id === playerA)
-  const b = stats.find((s) => s.player.id === playerB)
-  const finished = (scoreA === raceTo) !== (scoreB === raceTo)
-  const canSave = !!a && !!b && finished
-
+  const mine = stats.find((s) => s.player.id === me.id)!
+  const opp = stats.find((s) => s.player.id === opponentId)
+  const race = stageOption?.raceTo ?? raceTo
+  const isRated = stageOption ? true : rated
+  const finished = (own === race) !== (other === race)
   const preview =
-    a && b && finished
+    opp && finished && isRated
       ? calculateElo({
-          ratingA: a.elo,
-          ratingB: b.elo,
-          matchesA: a.matches,
-          matchesB: b.matches,
-          scoreA,
-          scoreB,
-          raceTo,
+          ratingA: mine.elo,
+          ratingB: opp.elo,
+          matchesA: mine.matches,
+          matchesB: opp.matches,
+          scoreA: own,
+          scoreB: other,
+          raceTo: race,
         })
       : null
 
-  const pick = (id: string) => {
-    if (playerA === id) return setPlayerA(null)
-    if (playerB === id) return setPlayerB(null)
-    if (!playerA) return setPlayerA(id)
-    if (!playerB) return setPlayerB(id)
-    setPlayerB(id)
+  const reset = () => {
+    setOwn(0)
+    setOther(0)
+    setError('')
   }
 
-  const changeRace = (value: number) => {
-    const next = Math.max(1, Math.min(15, value))
-    setRaceTo(next)
-    setScoreA((s) => Math.min(s, next))
-    setScoreB((s) => Math.min(s, next))
+  const chooseStage = (o: StageOption) => {
+    setStageOption(o)
+    setOpponentId(o.opponentId)
+    setOwn((v) => Math.min(v, o.raceTo))
+    setOther((v) => Math.min(v, o.raceTo))
   }
 
-  const save = () => {
-    if (!canSave || !preview || !a || !b) return
-    const match = onSave({ discipline, raceTo, playerA: a.player.id, playerB: b.player.id, scoreA, scoreB })
-    setResult({ match, deltaA: preview.deltaA, deltaB: preview.deltaB })
+  const chooseOpponent = (id: number) => {
+    setStageOption(null)
+    setOpponentId(id === opponentId ? null : id)
   }
 
-  const again = () => {
-    setResult(null)
-    setScoreA(0)
-    setScoreB(0)
+  const changeRace = (v: number) => {
+    setRaceTo(v)
+    setOwn((s) => Math.min(s, v))
+    setOther((s) => Math.min(s, v))
   }
 
-  if (result && a && b) {
-    const winnerIsA = result.match.scoreA > result.match.scoreB
+  const submit = async () => {
+    if (!opp || !finished) return
+    setBusy(true)
+    setError('')
+    try {
+      await onSubmit(
+        stageOption
+          ? { opponentId: opp.player.id, ownScore: own, opponentScore: other, stageId: stageOption.stageId }
+          : { opponentId: opp.player.id, ownScore: own, opponentScore: other, discipline, raceTo, rated },
+      )
+      setSent(opp.player.name)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (sent) {
     return (
       <Card className="p-6 text-center">
-        <div className="text-4xl">🏆</div>
-        <p className="mt-2 text-lg font-bold">{winnerIsA ? a.player.name : b.player.name} gewinnt</p>
-        <p className="text-sm text-white/60">
-          {result.match.scoreA} : {result.match.scoreB} · {result.match.discipline} · Race to {result.match.raceTo}
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-felt-500/20 text-2xl">✓</div>
+        <p className="mt-4 text-lg font-bold">Ergebnis eingetragen</p>
+        <p className="mt-1 text-sm text-white/60">
+          {sent} muss es noch bestätigen. Erst dann zählt es{isRated ? ' für die Elo' : ''}.
         </p>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          {[
-            { s: a, d: result.deltaA },
-            { s: b, d: result.deltaB },
-          ].map(({ s, d }) => (
-            <div key={s.player.id} className="rounded-xl bg-white/5 p-3">
-              <div className="font-semibold">{s.player.name}</div>
-              <div className="mt-1 text-2xl font-bold tabular-nums">
-                <Delta value={d} />
-              </div>
-              <div className="text-xs text-white/50 tabular-nums">
-                {s.elo - d} → {s.elo}
-              </div>
-            </div>
-          ))}
-        </div>
         <div className="mt-6 flex gap-2">
-          <Button variant="ghost" className="flex-1" onClick={again}>
-            Revanche
-          </Button>
           <Button
+            variant="ghost"
             className="flex-1"
             onClick={() => {
-              again()
-              setPlayerA(null)
-              setPlayerB(null)
+              setSent(null)
+              reset()
             }}
           >
-            Neues Match
+            Revanche
+          </Button>
+          <Button className="flex-1" onClick={onDone}>
+            Fertig
           </Button>
         </div>
       </Card>
@@ -126,93 +149,125 @@ export function NewMatch({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      {stageOptions.length > 0 && (
+        <section>
+          <SectionTitle>Deine Wettkampfspiele</SectionTitle>
+          <div className="space-y-2">
+            {stageOptions.map((o) => {
+              const name = stats.find((s) => s.player.id === o.opponentId)?.player.name ?? '?'
+              const active = stageOption?.stageId === o.stageId && stageOption.opponentId === o.opponentId
+              return (
+                <button
+                  key={`${o.stageId}-${o.opponentId}`}
+                  onClick={() => chooseStage(o)}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left ring-1 transition ${
+                    active ? 'bg-felt-500/20 ring-felt-400' : 'bg-felt-900/80 ring-white/5 hover:bg-white/5'
+                  }`}
+                >
+                  <Avatar name={name} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold">gegen {name}</div>
+                    <div className="truncate text-xs text-white/50">
+                      {o.label} · {o.discipline} · Race to {o.raceTo}
+                    </div>
+                  </div>
+                  <span className="text-felt-400">🏆</span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       <section>
-        <SectionTitle>Spieler wählen</SectionTitle>
+        <SectionTitle>{stageOptions.length > 0 ? 'Oder freies Duell gegen' : 'Gegner'}</SectionTitle>
         <div className="flex flex-wrap gap-2">
-          {stats.map((s) => {
-            const label = s.player.id === playerA ? 'A' : s.player.id === playerB ? 'B' : null
+          {opponents.map((s) => {
+            const active = s.player.id === opponentId && !stageOption
             return (
               <button
                 key={s.player.id}
-                onClick={() => pick(s.player.id)}
+                onClick={() => chooseOpponent(s.player.id)}
                 className={`flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-sm transition ${
-                  label ? 'bg-felt-500 text-white' : 'bg-white/5 hover:bg-white/10'
+                  active ? 'bg-felt-500 text-white' : 'bg-white/5 hover:bg-white/10'
                 }`}
               >
                 <Avatar name={s.player.name} size="sm" />
                 {s.player.name}
-                {label && <span className="rounded bg-black/20 px-1.5 text-xs font-bold">{label}</span>}
+                <span className="text-xs opacity-60 tabular-nums">{s.elo}</span>
               </button>
             )
           })}
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-3">
-        <div>
-          <SectionTitle>Disziplin</SectionTitle>
-          <select
-            value={discipline}
-            onChange={(e) => setDiscipline(e.target.value as Discipline)}
-            className="w-full rounded-xl bg-white/5 px-3 py-3 font-semibold outline-none"
-          >
-            {DISCIPLINES.map((d) => (
-              <option key={d} value={d} className="bg-felt-900">
-                {d}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <SectionTitle>Race to</SectionTitle>
-          <div className="flex items-center justify-between rounded-xl bg-white/5">
-            <button className="px-4 py-3 text-xl" onClick={() => changeRace(raceTo - 1)} aria-label="weniger">
-              −
-            </button>
-            <span className="text-lg font-bold tabular-nums">{raceTo}</span>
-            <button className="px-4 py-3 text-xl" onClick={() => changeRace(raceTo + 1)} aria-label="mehr">
-              +
-            </button>
+      {stageOption ? (
+        <Card className="flex items-center justify-between px-4 py-3 text-sm">
+          <span className="text-white/70">
+            {stageOption.discipline} · Race to {stageOption.raceTo}
+          </span>
+          <Badge tone="good">Wettkampf · gewertet</Badge>
+        </Card>
+      ) : (
+        <section className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <SectionTitle>Disziplin</SectionTitle>
+              <select
+                id="discipline"
+                value={discipline}
+                onChange={(e) => setDiscipline(e.target.value as Discipline)}
+                className="w-full rounded-xl bg-white/5 px-3 py-3 font-semibold outline-none"
+              >
+                {DISCIPLINES.map((d) => (
+                  <option key={d} value={d} className="bg-felt-900">
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <SectionTitle>Race to</SectionTitle>
+              <Stepper label="Race to" value={raceTo} min={1} max={25} onChange={changeRace} />
+            </div>
           </div>
-        </div>
-      </section>
+          <Segmented
+            value={rated ? 'rated' : 'casual'}
+            onChange={(v) => setRated(v === 'rated')}
+            options={[
+              { value: 'rated', label: 'Gewertet' },
+              { value: 'casual', label: 'Ungewertet' },
+            ]}
+          />
+          {!rated && <p className="px-1 text-xs text-white/50">Ungewertete Spiele landen in der Historie, ändern aber keine Elo.</p>}
+        </section>
+      )}
 
       <section>
         <SectionTitle>Ergebnis</SectionTitle>
         <Card className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 p-4">
-          <ScorePicker name={a?.player.name ?? 'Spieler A'} value={scoreA} max={raceTo} onChange={setScoreA} />
+          <ScorePicker name="Du" value={own} max={race} onChange={setOwn} />
           <span className="text-2xl font-bold text-white/30">:</span>
-          <ScorePicker name={b?.player.name ?? 'Spieler B'} value={scoreB} max={raceTo} onChange={setScoreB} />
+          <ScorePicker name={opp?.player.name ?? 'Gegner'} value={other} max={race} onChange={setOther} />
         </Card>
-        {a && b && !finished && (
-          <p className="mt-2 px-1 text-xs text-white/50">Genau ein Spieler muss {raceTo} Frames erreichen.</p>
-        )}
-        {preview && a && b && (
+        {opp && !finished && <p className="mt-2 px-1 text-xs text-white/50">Genau ein Spieler muss {race} Frames erreichen.</p>}
+        {preview && opp && (
           <p className="mt-2 px-1 text-sm text-white/70">
-            Elo: {a.player.name} <Delta value={preview.deltaA} />, {b.player.name} <Delta value={preview.deltaB} />
+            Nach Bestätigung: du <Delta value={preview.deltaA} />, {opp.player.name} <Delta value={preview.deltaB} />
           </p>
         )}
       </section>
 
-      <Button className="w-full" disabled={!canSave} onClick={save}>
-        Match speichern
+      <ErrorText>{error}</ErrorText>
+      <Button className="w-full" disabled={!opp || !finished || busy} onClick={submit}>
+        {busy ? 'Wird gespeichert …' : 'Zur Bestätigung senden'}
       </Button>
     </div>
   )
 }
 
-function ScorePicker({
-  name,
-  value,
-  max,
-  onChange,
-}: {
-  name: string
-  value: number
-  max: number
-  onChange: (v: number) => void
-}) {
+function ScorePicker({ name, value, max, onChange }: { name: string; value: number; max: number; onChange: (v: number) => void }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <span className="max-w-full truncate text-sm text-white/70">{name}</span>

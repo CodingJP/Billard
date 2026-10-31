@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { initials } from '../format.ts'
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-2xl bg-felt-900/80 ring-1 ring-white/5 ${className}`}>{children}</div>
@@ -75,15 +76,6 @@ export function Button({
   )
 }
 
-export function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('')
-}
-
 export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const sizes = { sm: 'h-8 w-8 text-xs', md: 'h-10 w-10 text-sm', lg: 'h-16 w-16 text-xl' }
   return (
@@ -95,6 +87,110 @@ export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md'
   )
 }
 
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })
+/** Two-step button instead of window.confirm, which some browsers block. */
+export function ConfirmButton({
+  children,
+  confirmLabel,
+  onConfirm,
+  variant = 'danger',
+  className = '',
+}: {
+  children: ReactNode
+  confirmLabel: string
+  onConfirm: () => void
+  variant?: 'primary' | 'ghost' | 'danger'
+  className?: string
+}) {
+  const [armed, setArmed] = useState(false)
+  if (!armed) {
+    return (
+      <Button variant={variant} className={className} onClick={() => setArmed(true)}>
+        {children}
+      </Button>
+    )
+  }
+  return (
+    <div className={`flex gap-2 ${className}`}>
+      <Button variant="ghost" className="flex-1" onClick={() => setArmed(false)}>
+        Abbrechen
+      </Button>
+      <Button
+        variant="danger"
+        className="flex-1"
+        onClick={() => {
+          setArmed(false)
+          onConfirm()
+        }}
+      >
+        {confirmLabel}
+      </Button>
+    </div>
+  )
+}
+
+export function Segmented<T extends string | number>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="flex rounded-xl bg-white/5 p-1">
+      {options.map((o) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+            value === o.value ? 'bg-felt-500 text-white shadow' : 'text-white/60 hover:text-white'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function Stepper({
+  value,
+  min,
+  max,
+  onChange,
+  label,
+}: {
+  value: number
+  min: number
+  max: number
+  onChange: (v: number) => void
+  label: string
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl bg-white/5">
+      <button type="button" className="px-4 py-3 text-xl" onClick={() => onChange(Math.max(min, value - 1))} aria-label={`${label} weniger`}>
+        −
+      </button>
+      <span className="text-lg font-bold tabular-nums">{value}</span>
+      <button type="button" className="px-4 py-3 text-xl" onClick={() => onChange(Math.min(max, value + 1))} aria-label={`${label} mehr`}>
+        +
+      </button>
+    </div>
+  )
+}
+
+export function ErrorText({ children }: { children: ReactNode }) {
+  if (!children) return null
+  return <p className="rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{children}</p>
+}
+
+export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'warn' | 'good' }) {
+  const tones = {
+    neutral: 'bg-white/10 text-white/70',
+    warn: 'bg-amber-300/15 text-amber-200',
+    good: 'bg-felt-400/15 text-felt-400',
+  }
+  return <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tones[tone]}`}>{children}</span>
 }

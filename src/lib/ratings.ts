@@ -1,21 +1,31 @@
-import { calculateElo, START_ELO } from './elo'
-import type { Match, Player, PlayerStats, RatingChange } from './types'
+import { calculateElo, START_ELO } from './elo.ts'
+import type { Match, Player, PlayerStats, RatingChange } from './types.ts'
 
 export interface RatingState {
-  stats: Map<string, PlayerStats>
+  stats: Map<number, PlayerStats>
   changes: RatingChange[]
 }
 
 export function sortByPlayedAt(matches: Match[]): Match[] {
-  return [...matches].sort((a, b) => a.playedAt.localeCompare(b.playedAt) || a.id.localeCompare(b.id))
+  return [...matches].sort((a, b) => a.playedAt.localeCompare(b.playedAt) || a.id - b.id)
+}
+
+/** Only results both players agreed on count for anything. */
+export function isConfirmed(m: Match): boolean {
+  return m.status === 'confirmed'
+}
+
+/** Confirmed and rated: the only matches that move Elo. */
+export function countsForElo(m: Match): boolean {
+  return m.status === 'confirmed' && m.rated
 }
 
 /**
- * Replays every match in chronological order. Ratings are always derived from
+ * Replays every confirmed, rated match in chronological order. Ratings are always derived from
  * the match list, so editing or deleting a match keeps everything consistent.
  */
 export function computeRatings(players: Player[], matches: Match[]): RatingState {
-  const stats = new Map<string, PlayerStats>()
+  const stats = new Map<number, PlayerStats>()
   for (const player of players) {
     stats.set(player.id, {
       player,
@@ -33,7 +43,7 @@ export function computeRatings(players: Player[], matches: Match[]): RatingState
   }
 
   const changes: RatingChange[] = []
-  for (const match of sortByPlayedAt(matches)) {
+  for (const match of sortByPlayedAt(matches.filter(countsForElo))) {
     const a = stats.get(match.playerA)
     const b = stats.get(match.playerB)
     if (!a || !b) continue
@@ -88,9 +98,11 @@ export interface HeadToHead {
   losses: number
 }
 
-export function headToHead(playerId: string, players: Player[], matches: Match[]): HeadToHead[] {
-  const byOpponent = new Map<string, HeadToHead>()
+/** Head-to-head over all confirmed matches, rated or not. */
+export function headToHead(playerId: number, players: Player[], matches: Match[]): HeadToHead[] {
+  const byOpponent = new Map<number, HeadToHead>()
   for (const m of matches) {
+    if (!isConfirmed(m)) continue
     if (m.playerA !== playerId && m.playerB !== playerId) continue
     const isA = m.playerA === playerId
     const opponentId = isA ? m.playerB : m.playerA

@@ -1,8 +1,9 @@
-import { START_ELO } from '../lib/elo'
-import { headToHead } from '../lib/ratings'
-import type { Match, Player, PlayerStats, RatingChange } from '../lib/types'
-import { MatchList } from './History'
-import { Avatar, Card, SectionTitle } from './ui'
+import type { ReactNode } from 'react'
+import { START_ELO } from '../lib/elo.ts'
+import { headToHead } from '../lib/ratings.ts'
+import type { Match, Player, PlayerStats, RatingChange } from '../lib/types.ts'
+import { MatchList } from './History.tsx'
+import { Avatar, Badge, Card, SectionTitle } from './ui.tsx'
 
 export function PlayerProfile({
   stats,
@@ -10,14 +11,18 @@ export function PlayerProfile({
   players,
   matches,
   changes,
+  stageNames,
   onBack,
+  children,
 }: {
   stats: PlayerStats
   rank: number
   players: Player[]
   matches: Match[]
   changes: RatingChange[]
-  onBack: () => void
+  stageNames: Map<number, string>
+  onBack?: () => void
+  children?: ReactNode
 }) {
   const id = stats.player.id
   const own = matches.filter((m) => m.playerA === id || m.playerB === id)
@@ -28,22 +33,28 @@ export function PlayerProfile({
 
   return (
     <div className="space-y-5">
-      <button onClick={onBack} className="text-sm text-felt-400">
-        ← Zurück
-      </button>
+      {onBack && (
+        <button onClick={onBack} className="text-sm text-felt-400">
+          ← Zurück
+        </button>
+      )}
 
       <div className="flex items-center gap-4">
         <Avatar name={stats.player.name} size="lg" />
         <div>
-          <h1 className="text-2xl font-bold">{stats.player.name}</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-bold">
+            {stats.player.name}
+            {stats.player.isAdmin && <Badge tone="good">Admin</Badge>}
+          </h1>
           <p className="text-white/60">
             Platz {rank} · <span className="font-semibold text-white tabular-nums">{stats.elo}</span> Elo
           </p>
+          <p className="text-xs text-white/40">Spieler Nr. {stats.player.id}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-2">
-        <Stat label="Matches" value={stats.matches} />
+        <Stat label="Gewertet" value={stats.matches} />
         <Stat label="Siegquote" value={`${winRate}%`} />
         <Stat label="Beste Serie" value={stats.bestStreak} />
         <Stat label="Höchste Elo" value={peak} />
@@ -83,9 +94,11 @@ export function PlayerProfile({
       )}
 
       <section>
-        <SectionTitle>Letzte Matches</SectionTitle>
-        <MatchList matches={own} players={players} changes={changes} limit={10} />
+        <SectionTitle>Letzte Spiele</SectionTitle>
+        <MatchList matches={own} players={players} changes={changes} stageNames={stageNames} limit={15} />
       </section>
+
+      {children}
     </div>
   )
 }

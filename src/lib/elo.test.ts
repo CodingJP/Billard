@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateElo, expectedScore, kFactor, marginFactor } from './elo'
+import { calculateElo, expectedScore, kFactor, marginFactor } from './elo.ts'
 
 describe('expectedScore', () => {
   it('is 0.5 for equal ratings', () => {
