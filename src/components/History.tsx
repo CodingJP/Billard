@@ -4,7 +4,9 @@ import { sortByPlayedAt } from '../lib/ratings.ts'
 import type { NewChallengeInput } from '../api.ts'
 import type { AppState, Challenge, Match, Player, RatingChange } from '../lib/types.ts'
 import { ChallengeForm, ChallengeList } from './Challenges.tsx'
-import { Avatar, Badge, Button, Card, ConfirmButton, Delta, EmptyState, ErrorText, SectionTitle } from './ui.tsx'
+import { SwordsIcon, XIcon } from './icons.tsx'
+import { toast } from '../toast.ts'
+import { Badge, Ball, Button, Card, ConfirmButton, Delta, EmptyState, ErrorText, Label, SectionTitle, SlideToConfirm } from './ui.tsx'
 
 const nameOf = (players: Player[], id: number) => players.find((p) => p.id === id)?.name ?? 'Unbekannt'
 
@@ -34,7 +36,7 @@ export function MatchList({
   const list = sortByPlayedAt(confirmed).reverse().slice(0, limit)
 
   return (
-    <Card className="divide-y divide-white/5 overflow-hidden">
+    <Card className="divide-y divide-line overflow-hidden">
       {list.map((m) => {
         const aWon = m.scoreA > m.scoreB
         const dA = delta(m.id, m.playerA)
@@ -43,22 +45,26 @@ export function MatchList({
         return (
           <div key={m.id} className="px-4 py-3">
             <button className="block w-full text-left" onClick={() => onDelete && setOpenId(openId === m.id ? null : m.id)}>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/40">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10.5px] font-medium text-muted">
                 <span className="whitespace-nowrap">
-                  {formatDate(m.playedAt)} · {m.discipline} · Race to {m.raceTo}
+                  {formatDate(m.playedAt)} · {m.discipline} · Race {m.raceTo}
                 </span>
                 {!m.rated && <Badge>ungewertet</Badge>}
                 {stage && <Badge tone="good">{stage}</Badge>}
               </div>
-              <div className="mt-1 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                <div className={`truncate ${aWon ? 'font-semibold' : 'text-white/60'}`}>
-                  {nameOf(players, m.playerA)} {dA !== null && <span className="text-xs"><Delta value={dA} /></span>}
+              <div className="mt-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                <div className={`flex min-w-0 items-center gap-2 ${aWon ? 'font-bold' : 'text-muted'}`}>
+                  <span className="truncate">{nameOf(players, m.playerA)}</span>
+                  {dA !== null && <Delta value={dA} />}
                 </div>
-                <div className="text-lg font-bold tabular-nums">
-                  {m.scoreA} : {m.scoreB}
+                <div className="font-display text-[22px] leading-none font-bold tabular-nums">
+                  {m.scoreA}
+                  <span className="mx-1 text-muted">:</span>
+                  {m.scoreB}
                 </div>
-                <div className={`truncate text-right ${!aWon ? 'font-semibold' : 'text-white/60'}`}>
-                  {dB !== null && <span className="text-xs"><Delta value={dB} /></span>} {nameOf(players, m.playerB)}
+                <div className={`flex min-w-0 items-center justify-end gap-2 ${!aWon ? 'font-bold' : 'text-muted'}`}>
+                  {dB !== null && <Delta value={dB} />}
+                  <span className="truncate">{nameOf(players, m.playerB)}</span>
                 </div>
               </div>
             </button>
@@ -113,20 +119,33 @@ export function GamesScreen({
     <div className="space-y-6">
       <ErrorText>{error}</ErrorText>
 
-      {challenging ? (
-        <ChallengeForm
-          players={state.players}
-          meId={me.id}
-          onCancel={() => setChallenging(false)}
-          onSubmit={async (input) => {
-            await challenges.create(input)
-            setChallenging(false)
-          }}
-        />
-      ) : (
-        <Button variant="ghost" className="w-full" onClick={() => setChallenging(true)}>
-          ⚔️ Jemanden herausfordern
-        </Button>
+      {forMe.length > 0 && (
+        <section>
+          <SectionTitle>Wartet auf deine Bestätigung</SectionTitle>
+          <div className="space-y-3">
+            {forMe.map((m) => (
+              <ConfirmCard
+                key={m.id}
+                match={m}
+                meId={me.id}
+                players={state.players}
+                stage={m.stageId !== null ? (stageNames.get(m.stageId) ?? 'Wettkampf') : undefined}
+                onConfirm={() =>
+                  run(async () => {
+                    await onConfirm(m.id)
+                    toast('Ergebnis bestätigt. Rangliste aktualisiert.')
+                  })
+                }
+                onReject={() =>
+                  run(async () => {
+                    await onReject(m.id)
+                    toast('Ergebnis abgelehnt.')
+                  })
+                }
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       <ChallengeList
@@ -137,70 +156,50 @@ export function GamesScreen({
         onPlay={challenges.play}
       />
 
-      {forMe.length > 0 && (
-        <section>
-          <SectionTitle>Wartet auf deine Bestätigung</SectionTitle>
-          <div className="space-y-3">
-            {forMe.map((m) => {
-              const myScore = m.playerA === me.id ? m.scoreA : m.scoreB
-              const theirScore = m.playerA === me.id ? m.scoreB : m.scoreA
-              const opponent = nameOf(state.players, m.createdBy)
-              const won = myScore > theirScore
-              return (
-                <Card key={m.id} className="p-4 ring-1 ring-amber-300/30">
-                  <div className="flex items-center gap-3">
-                    <Avatar name={opponent} />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold">{opponent} hat eingetragen</div>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-white/50">
-                        {m.discipline} · Race to {m.raceTo} · {formatRelative(m.playedAt)}
-                        {!m.rated && <Badge>ungewertet</Badge>}
-                        {m.stageId !== null && <Badge tone="good">{stageNames.get(m.stageId) ?? 'Wettkampf'}</Badge>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="my-4 text-center">
-                    <div className="text-4xl font-bold tabular-nums">
-                      {myScore} : {theirScore}
-                    </div>
-                    <div className={`mt-1 text-sm ${won ? 'text-felt-400' : 'text-rose-300'}`}>
-                      {won ? 'Du hast gewonnen' : 'Du hast verloren'}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" className="flex-1" onClick={() => run(() => onReject(m.id))}>
-                      Stimmt nicht
-                    </Button>
-                    <Button className="flex-1" onClick={() => run(() => onConfirm(m.id))}>
-                      Bestätigen
-                    </Button>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
-        </section>
+      {challenging ? (
+        <ChallengeForm
+          players={state.players}
+          meId={me.id}
+          onCancel={() => setChallenging(false)}
+          onSubmit={async (input) => {
+            await challenges.create(input)
+            setChallenging(false)
+            toast('Herausforderung gesendet.')
+          }}
+        />
+      ) : (
+        <Button variant="ghost" className="w-full" onClick={() => setChallenging(true)}>
+          <SwordsIcon size={18} /> Jemanden herausfordern
+        </Button>
       )}
 
       {fromMe.length > 0 && (
         <section>
           <SectionTitle>Wartet auf deinen Gegner</SectionTitle>
-          <Card className="divide-y divide-white/5">
+          <Card className="divide-y divide-line">
             {fromMe.map((m) => {
               const opponentId = m.playerA === me.id ? m.playerB : m.playerA
+              const myScore = m.playerA === me.id ? m.scoreA : m.scoreB
+              const theirScore = m.playerA === me.id ? m.scoreB : m.scoreA
               return (
                 <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                  <Ball id={opponentId} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate">
-                      gegen <span className="font-semibold">{nameOf(state.players, opponentId)}</span>
+                      gegen <span className="font-bold">{nameOf(state.players, opponentId)}</span>
                     </div>
-                    <div className="text-xs text-white/40">{formatRelative(m.playedAt)}</div>
+                    <div className="font-mono text-[10.5px] text-muted">{formatRelative(m.playedAt)}</div>
                   </div>
-                  <span className="font-bold tabular-nums">
-                    {m.scoreA} : {m.scoreB}
+                  <span className="font-display text-xl font-bold tabular-nums">
+                    {myScore}:{theirScore}
                   </span>
-                  <button className="text-xs text-white/40 hover:text-rose-300" onClick={() => run(() => onDelete(m.id))}>
-                    Zurückziehen
+                  <button
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-bad"
+                    onClick={() => run(() => onDelete(m.id))}
+                    aria-label="Zurückziehen"
+                    title="Zurückziehen"
+                  >
+                    <XIcon size={16} />
                   </button>
                 </div>
               )
@@ -220,5 +219,59 @@ export function GamesScreen({
         />
       </section>
     </div>
+  )
+}
+
+function ConfirmCard({
+  match: m,
+  meId,
+  players,
+  stage,
+  onConfirm,
+  onReject,
+}: {
+  match: Match
+  meId: number
+  players: Player[]
+  stage?: string
+  onConfirm: () => void
+  onReject: () => void
+}) {
+  const myScore = m.playerA === meId ? m.scoreA : m.scoreB
+  const theirScore = m.playerA === meId ? m.scoreB : m.scoreA
+  const opponent = nameOf(players, m.createdBy)
+  const won = myScore > theirScore
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+        <Ball id={m.createdBy} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-bold">{opponent} hat eingetragen</div>
+          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10.5px] text-muted">
+            {m.discipline} · Race {m.raceTo} · {formatRelative(m.playedAt)}
+            {!m.rated && <Badge>ungewertet</Badge>}
+            {stage && <Badge tone="good">{stage}</Badge>}
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2 px-4 pt-5 pb-2 text-center">
+        <div>
+          <div className="font-display text-[64px] leading-[0.85] font-extrabold tabular-nums">{myScore}</div>
+          <Label className="mt-2">Du</Label>
+        </div>
+        <div className="pb-8 font-display text-4xl font-bold text-muted">:</div>
+        <div>
+          <div className="font-display text-[64px] leading-[0.85] font-extrabold text-muted tabular-nums">{theirScore}</div>
+          <Label className="mt-2 truncate">{opponent}</Label>
+        </div>
+      </div>
+      <p className={`pb-4 text-center text-sm font-bold ${won ? 'text-good' : 'text-bad'}`}>{won ? 'Du hast gewonnen' : 'Du hast verloren'}</p>
+      <div className="space-y-2 px-3 pb-3">
+        <SlideToConfirm label="Wischen zum Bestätigen" doneLabel="Bestätigt" onConfirm={onConfirm} />
+        <button onClick={onReject} className="w-full rounded-xl py-2.5 text-sm font-semibold text-muted hover:text-bad">
+          Stimmt nicht
+        </button>
+      </div>
+    </Card>
   )
 }

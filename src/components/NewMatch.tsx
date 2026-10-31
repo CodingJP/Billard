@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { NewMatchInput } from '../api.ts'
 import { openPairings } from '../lib/competition.ts'
 import { calculateElo } from '../lib/elo.ts'
 import { DISCIPLINES, type AppState, type Discipline, type PlayerStats } from '../lib/types.ts'
-import { Avatar, Badge, Button, Card, Delta, EmptyState, ErrorText, SectionTitle, Segmented, Stepper } from './ui.tsx'
+import { selectClass } from '../styles.ts'
+import { SwordsIcon, TrophyIcon, UndoIcon } from './icons.tsx'
+import { toast } from '../toast.ts'
+import { Badge, Ball, Button, Card, Delta, EmptyState, ErrorText, Label, SectionTitle, Segmented, Stepper } from './ui.tsx'
 
 interface StageOption {
   stageId?: number
@@ -53,7 +56,6 @@ export function NewMatch({
   const [other, setOther] = useState(0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [sent, setSent] = useState<string | null>(null)
 
   const stageOptions = useMemo(() => {
     const list: StageOption[] = []
@@ -134,6 +136,11 @@ export function NewMatch({
     setOther((s) => Math.min(s, v))
   }
 
+  // Once someone reached the race, further frames are not possible.
+  const decided = own === race || other === race
+  const tapOwn = () => !decided && setOwn((v) => Math.min(race, v + 1))
+  const tapOther = () => opp && !decided && setOther((v) => Math.min(race, v + 1))
+
   const submit = async () => {
     if (!opp || !finished) return
     setBusy(true)
@@ -150,43 +157,16 @@ export function NewMatch({
             }
           : { opponentId: opp.player.id, ownScore: own, opponentScore: other, discipline, raceTo, rated },
       )
-      setSent(opp.player.name)
+      toast(`Gesendet. ${opp.player.name} muss noch bestätigen.`)
+      onDone()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen.')
-    } finally {
       setBusy(false)
     }
   }
 
-  if (sent) {
-    return (
-      <Card className="p-6 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-felt-500/20 text-2xl">✓</div>
-        <p className="mt-4 text-lg font-bold">Ergebnis eingetragen</p>
-        <p className="mt-1 text-sm text-white/60">
-          {sent} muss es noch bestätigen. Erst dann zählt es{isRated ? ' für die Elo' : ''}.
-        </p>
-        <div className="mt-6 flex gap-2">
-          <Button
-            variant="ghost"
-            className="flex-1"
-            onClick={() => {
-              setSent(null)
-              reset()
-            }}
-          >
-            Revanche
-          </Button>
-          <Button className="flex-1" onClick={onDone}>
-            Fertig
-          </Button>
-        </div>
-      </Card>
-    )
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {stageOptions.length > 0 && (
         <section>
           <SectionTitle>Steht an</SectionTitle>
@@ -199,18 +179,18 @@ export function NewMatch({
                 <button
                   key={`${o.stageId ?? 'c' + o.challengeId}-${o.opponentId}`}
                   onClick={() => chooseStage(o)}
-                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left ring-1 transition ${
-                    active ? 'bg-felt-500/20 ring-felt-400' : 'bg-felt-900/80 ring-white/5 hover:bg-white/5'
+                  className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${
+                    active ? 'border-strong bg-surface ring-1 ring-strong' : 'border-line bg-surface hover:bg-surface-2'
                   }`}
                 >
-                  <Avatar name={name} size="sm" />
+                  <Ball id={o.opponentId} size="sm" />
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold">gegen {name}</div>
-                    <div className="truncate text-xs text-white/50">
-                      {o.label} · {o.discipline} · Race to {o.raceTo}
+                    <div className="font-bold">gegen {name}</div>
+                    <div className="truncate font-mono text-[11px] text-muted">
+                      {o.label} · {o.discipline} · Race {o.raceTo}
                     </div>
                   </div>
-                  <span className="text-felt-400">{o.challengeId ? '⚔️' : '🏆'}</span>
+                  <span className="text-muted">{o.challengeId ? <SwordsIcon size={18} /> : <TrophyIcon size={18} />}</span>
                 </button>
               )
             })}
@@ -220,20 +200,20 @@ export function NewMatch({
 
       <section>
         <SectionTitle>{stageOptions.length > 0 ? 'Oder freies Duell gegen' : 'Gegner'}</SectionTitle>
-        <div className="flex flex-wrap gap-2">
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
           {opponents.map((s) => {
             const active = s.player.id === opponentId && !stageOption
             return (
               <button
                 key={s.player.id}
                 onClick={() => chooseOpponent(s.player.id)}
-                className={`flex items-center gap-2 rounded-full py-1 pr-3 pl-1 text-sm transition ${
-                  active ? 'bg-felt-500 text-white' : 'bg-white/5 hover:bg-white/10'
+                className={`flex shrink-0 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1 text-sm font-semibold transition ${
+                  active ? 'border-strong bg-strong text-strong-fg' : 'border-line bg-surface hover:bg-surface-2'
                 }`}
               >
-                <Avatar name={s.player.name} size="sm" />
+                <Ball id={s.player.id} size="sm" />
                 {s.player.name}
-                <span className="text-xs opacity-60 tabular-nums">{s.elo}</span>
+                <span className="font-mono text-[11px] opacity-60 tabular-nums">{s.elo}</span>
               </button>
             )
           })}
@@ -241,8 +221,8 @@ export function NewMatch({
       </section>
 
       {stageOption ? (
-        <Card className="flex items-center justify-between px-4 py-3 text-sm">
-          <span className="text-white/70">
+        <Card className="flex items-center justify-between gap-3 px-4 py-3">
+          <span className="font-mono text-xs font-semibold">
             {stageOption.discipline} · Race to {stageOption.raceTo}
           </span>
           <Badge tone="good">
@@ -251,27 +231,24 @@ export function NewMatch({
         </Card>
       ) : (
         <section className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <SectionTitle>Disziplin</SectionTitle>
-              <select
-                id="discipline"
-                value={discipline}
-                onChange={(e) => setDiscipline(e.target.value as Discipline)}
-                className="w-full rounded-xl bg-white/5 px-3 py-3 font-semibold outline-none"
-              >
+          <Card className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <Label>Disziplin</Label>
+              <select id="discipline" value={discipline} onChange={(e) => setDiscipline(e.target.value as Discipline)} className={`${selectClass} mt-1.5`}>
                 {DISCIPLINES.map((d) => (
-                  <option key={d} value={d} className="bg-felt-900">
+                  <option key={d} value={d}>
                     {d}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <SectionTitle>Race to</SectionTitle>
-              <Stepper label="Race to" value={raceTo} min={1} max={25} onChange={changeRace} />
+              <Label>Race to</Label>
+              <div className="mt-1.5">
+                <Stepper label="Race to" value={raceTo} min={1} max={25} onChange={changeRace} />
+              </div>
             </div>
-          </div>
+          </Card>
           <Segmented
             value={rated ? 'rated' : 'casual'}
             onChange={(v) => setRated(v === 'rated')}
@@ -280,54 +257,129 @@ export function NewMatch({
               { value: 'casual', label: 'Ungewertet' },
             ]}
           />
-          {!rated && <p className="px-1 text-xs text-white/50">Ungewertete Spiele landen in der Historie, ändern aber keine Elo.</p>}
+          {!rated && <p className="px-1 text-xs text-muted">Ungewertete Spiele landen in der Historie, ändern aber keine Elo.</p>}
         </section>
       )}
 
       <section>
-        <SectionTitle>Ergebnis</SectionTitle>
-        <Card className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 p-4">
-          <ScorePicker name="Du" value={own} max={race} onChange={setOwn} />
-          <span className="text-2xl font-bold text-white/30">:</span>
-          <ScorePicker name={opp?.player.name ?? 'Gegner'} value={other} max={race} onChange={setOther} />
-        </Card>
-        {opp && !finished && <p className="mt-2 px-1 text-xs text-white/50">Genau ein Spieler muss {race} Frames erreichen.</p>}
-        {preview && opp && (
-          <p className="mt-2 px-1 text-sm text-white/70">
-            Nach Bestätigung: du <Delta value={preview.deltaA} />, {opp.player.name} <Delta value={preview.deltaB} />
-          </p>
-        )}
+        <div className="mb-2 flex items-center justify-between px-1">
+          <Label>Tippe pro gewonnenem Frame</Label>
+          <Label>Race to {race}</Label>
+        </div>
+        <div className="grid grid-cols-2 overflow-hidden rounded-[22px] border border-line">
+          <BoardHalf
+            id={me.id}
+            name="Du"
+            score={own}
+            race={race}
+            won={own === race}
+            onTap={tapOwn}
+          />
+          <BoardHalf
+            id={opp?.player.id ?? null}
+            name={opp?.player.name ?? 'Gegner wählen'}
+            score={other}
+            race={race}
+            won={other === race}
+            onTap={tapOther}
+            divider
+          />
+        </div>
+        <div className="mt-2 flex gap-2">
+          <SmallButton disabled={own === 0} onClick={() => setOwn((v) => Math.max(0, v - 1))}>
+            −1 Du
+          </SmallButton>
+          <SmallButton disabled={other === 0} onClick={() => setOther((v) => Math.max(0, v - 1))}>
+            −1 {opp?.player.name ?? 'Gegner'}
+          </SmallButton>
+          <SmallButton disabled={own === 0 && other === 0} onClick={reset}>
+            <UndoIcon size={14} /> Neu
+          </SmallButton>
+        </div>
       </section>
 
+      <Card className="flex min-h-14 items-center justify-between gap-3 px-4 py-3">
+        {preview && opp ? (
+          <>
+            <Label>Nach Bestätigung</Label>
+            <span className="flex items-center gap-3 text-sm font-semibold">
+              <span>
+                Du <Delta value={preview.deltaA} />
+              </span>
+              <span className="truncate">
+                {opp.player.name} <Delta value={preview.deltaB} />
+              </span>
+            </span>
+          </>
+        ) : (
+          <p className="text-sm text-muted">
+            {!opp
+              ? 'Wähle zuerst deinen Gegner.'
+              : !finished
+                ? `Wer zuerst ${race} Frames hat, gewinnt.`
+                : 'Ungewertet: keine Elo-Änderung.'}
+          </p>
+        )}
+      </Card>
+
       <ErrorText>{error}</ErrorText>
-      <Button className="w-full" disabled={!opp || !finished || busy} onClick={submit}>
-        {busy ? 'Wird gespeichert …' : 'Zur Bestätigung senden'}
+      <Button className="w-full py-4 text-base" disabled={!opp || !finished || busy} onClick={submit}>
+        {busy ? 'Wird gesendet …' : 'Zur Bestätigung senden'}
       </Button>
     </div>
   )
 }
 
-function ScorePicker({ name, value, max, onChange }: { name: string; value: number; max: number; onChange: (v: number) => void }) {
+function BoardHalf({
+  id,
+  name,
+  score,
+  race,
+  won,
+  onTap,
+  divider,
+}: {
+  id: number | null
+  name: string
+  score: number
+  race: number
+  won: boolean
+  onTap: () => void
+  divider?: boolean
+}) {
   return (
-    <div className="flex flex-col items-center gap-2">
-      <span className="max-w-full truncate text-sm text-white/70">{name}</span>
-      <div className="flex items-center gap-3">
-        <button
-          className="h-10 w-10 rounded-full bg-white/5 text-xl hover:bg-white/10"
-          onClick={() => onChange(Math.max(0, value - 1))}
-          aria-label={`${name} minus`}
-        >
-          −
-        </button>
-        <span className="w-8 text-center text-4xl font-bold tabular-nums">{value}</span>
-        <button
-          className="h-10 w-10 rounded-full bg-felt-600 text-xl hover:bg-felt-500"
-          onClick={() => onChange(Math.min(max, value + 1))}
-          aria-label={`${name} plus`}
-        >
-          +
-        </button>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onTap}
+      aria-label={`Frame für ${name}`}
+      className={`relative flex min-h-[200px] flex-col items-center justify-between gap-2 px-3 pt-4 pb-3 transition select-none active:scale-[0.98] ${
+        won ? 'bg-strong text-strong-fg' : 'bg-surface text-fg'
+      } ${divider ? 'border-l border-line' : ''}`}
+    >
+      <span className="flex max-w-full items-center gap-2">
+        {id !== null ? <Ball id={id} size="sm" /> : <span className="h-8 w-8 rounded-full border-2 border-dashed border-line" />}
+        <span className="truncate text-sm font-bold">{name}</span>
+      </span>
+      <span className="font-display text-[88px] leading-none font-extrabold tabular-nums">{score}</span>
+      <span className="flex flex-wrap justify-center gap-1" aria-hidden="true">
+        {Array.from({ length: Math.min(race, 15) }, (_, i) => (
+          <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < score ? (won ? 'bg-strong-fg' : 'bg-fg') : won ? 'bg-strong-fg/30' : 'bg-line'}`} />
+        ))}
+      </span>
+      {won && <span className="absolute top-3 right-3 font-mono text-[10px] font-semibold tracking-[0.12em] uppercase">Sieg</span>}
+    </button>
+  )
+}
+
+function SmallButton({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex min-w-0 flex-1 items-center justify-center gap-1.5 truncate rounded-xl border border-line bg-surface px-2 py-2 font-mono text-[11.5px] font-semibold text-muted transition hover:text-fg disabled:opacity-40"
+    >
+      {children}
+    </button>
   )
 }

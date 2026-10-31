@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../api.ts'
 import type { AppState } from '../lib/types.ts'
 import { inputClass } from '../styles.ts'
-import { Button, ErrorText } from './ui.tsx'
+import { ArrowRightIcon } from './icons.tsx'
+import { Ball, Button, ErrorText } from './ui.tsx'
 
 function inviteKeyFromUrl(): string | null {
   const url = new URL(window.location.href)
@@ -48,15 +49,17 @@ export function AuthScreen({ appName, onDone }: { appName: string; onDone: (s: A
 
   return (
     <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-10">
-      <div className="mb-10 text-center">
-        <div className="relative mx-auto mb-5 h-20 w-20">
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-neutral-700 to-black shadow-[0_10px_40px_rgba(0,0,0,0.6)]" />
-          <div className="absolute inset-[26%] flex items-center justify-center rounded-full bg-white text-xl font-black text-black">8</div>
-          <div className="absolute top-[14%] left-[22%] h-3 w-5 rotate-[-30deg] rounded-full bg-white/25 blur-[1px]" />
+      <div className="mb-8">
+        <div className="mb-6 flex -space-x-3">
+          <Ball id={1} size="lg" />
+          <Ball id={10} size="lg" />
+          <Ball id={8} size="lg" />
         </div>
-        <p className="text-xs font-semibold tracking-[0.3em] text-felt-400 uppercase">{appName}</p>
-        <h1 className="mt-2 text-3xl font-bold">{registering ? 'Willkommen am Tisch' : 'Einloggen'}</h1>
-        <p className="mt-2 text-sm text-white/60">
+        <p className="font-mono text-[10.5px] font-semibold tracking-[0.16em] text-muted uppercase">{appName}</p>
+        <h1 className="mt-2 font-display text-[44px] leading-[0.9] font-extrabold uppercase">
+          {registering ? 'Willkommen am Tisch' : 'Einloggen'}
+        </h1>
+        <p className="mt-3 text-sm text-muted">
           {registering
             ? 'Wähle einen Username und ein Passwort. Mehr brauchst du nicht.'
             : 'Neu hier? Scanne den QR-Code am Billardtisch, um ein Konto zu erstellen.'}
@@ -88,16 +91,17 @@ export function AuthScreen({ appName, onDone }: { appName: string; onDone: (s: A
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        {registering && <p className="px-1 text-xs text-white/40">Mindestens 8 Zeichen. Username: 3 bis 20 Zeichen.</p>}
+        {registering && <p className="px-1 font-mono text-[11px] text-muted">Mind. 8 Zeichen · Username 3 bis 20 Zeichen</p>}
         <ErrorText>{error}</ErrorText>
-        <Button type="submit" className="w-full" disabled={busy || !username || !password || (registering && inviteValid === false)}>
+        <Button type="submit" className="w-full py-4 text-base" disabled={busy || !username || !password || (registering && inviteValid === false)}>
           {busy ? 'Einen Moment …' : registering ? 'Konto erstellen' : 'Einloggen'}
+          {!busy && <ArrowRightIcon size={18} />}
         </Button>
       </form>
 
       {inviteKey && (
         <button
-          className="mt-6 text-center text-sm text-felt-400"
+          className="mt-6 text-center text-sm font-semibold text-muted underline underline-offset-4 hover:text-fg"
           onClick={() => {
             setMode(registering ? 'login' : 'register')
             setError('')

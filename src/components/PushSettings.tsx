@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.ts'
 import { disablePush, enablePush, pushState, type PushState } from '../push.ts'
-import { Button, Card, ErrorText, SectionTitle } from './ui.tsx'
+import { BellIcon, XIcon } from './icons.tsx'
+import { Badge, Button, Card, ErrorText, SectionTitle } from './ui.tsx'
 
 const DISMISS_KEY = 'billard:push-prompt-dismissed'
 
@@ -35,17 +36,23 @@ export function PushCard() {
     <section>
       <SectionTitle>Benachrichtigungen</SectionTitle>
       <Card className="space-y-3 p-4">
-        <p className="text-sm text-white/70">
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 font-bold">
+            <BellIcon size={18} /> Push-Nachrichten
+          </span>
+          {state === 'on' ? <Badge tone="good">an</Badge> : state === 'off' ? <Badge>aus</Badge> : null}
+        </div>
+        <p className="text-sm text-muted">
           Push bei Herausforderungen, Ergebnissen zum Bestätigen und neuen Wettkampf-Etappen.
         </p>
         {state === 'needs-install' && (
-          <p className="rounded-xl bg-white/5 px-3 py-2 text-sm text-white/70">
+          <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm">
             Auf dem iPhone: Tippe unten in Safari auf <b>Teilen</b> und dann <b>Zum Home-Bildschirm</b>. Öffne die App von dort, dann kannst du Push einschalten.
           </p>
         )}
-        {state === 'unsupported' && <p className="text-sm text-white/50">Dieser Browser unterstützt keine Push-Nachrichten.</p>}
+        {state === 'unsupported' && <p className="text-sm text-muted">Dieser Browser unterstützt keine Push-Nachrichten.</p>}
         {state === 'denied' && (
-          <p className="text-sm text-amber-200">Benachrichtigungen sind blockiert. Erlaube sie in den Browser- oder Systemeinstellungen für diese Seite.</p>
+          <p className="text-sm font-semibold text-bad">Benachrichtigungen sind blockiert. Erlaube sie in den Browser- oder Systemeinstellungen für diese Seite.</p>
         )}
         <ErrorText>{error}</ErrorText>
         {(state === 'on' || state === 'off') && (
@@ -91,25 +98,27 @@ export function PushPrompt() {
   }
 
   return (
-    <Card className="flex items-start gap-3 p-4 ring-1 ring-felt-400/30">
-      <span className="text-2xl">🔔</span>
-      <div className="min-w-0 flex-1">
-        <p className="font-semibold">Verpasse keine Herausforderung</p>
-        <p className="mt-0.5 text-sm text-white/60">
+    <Card className="relative flex items-start gap-3 border-accent p-4">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-fg">
+        <BellIcon size={20} />
+      </span>
+      <button onClick={dismiss} className="absolute top-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2" aria-label="Schließen">
+        <XIcon size={16} />
+      </button>
+      <div className="min-w-0 flex-1 pr-6">
+        <p className="font-bold">Verpasse keine Herausforderung</p>
+        <p className="mt-0.5 text-sm text-muted">
           {state === 'needs-install'
             ? 'Füge die App über Teilen → Zum Home-Bildschirm hinzu, dann gibt es Push.'
             : 'Schalte Push ein und erfahre sofort, wenn dich jemand fordert.'}
         </p>
-        <div className="mt-3 flex gap-2">
-          {state === 'off' && (
+        {state === 'off' && (
+          <div className="mt-3 flex gap-2">
             <Button className="px-3 py-2 text-sm" onClick={() => enablePush().then(setState).catch(() => {})}>
               Einschalten
             </Button>
-          )}
-          <Button variant="ghost" className="px-3 py-2 text-sm" onClick={dismiss}>
-            Später
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
     </Card>
   )

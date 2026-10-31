@@ -1,20 +1,64 @@
 # Billard League
 
-A self-hosted billiards league for friends, offices and clubs. Players sign up by scanning a QR code, enter their duels on their phone, and the app keeps an Elo ranking, player histories and multi-stage competitions.
+**A self-hosted billiards league for friends, offices and clubs.** Players sign up by scanning a QR code at the table, enter their duels on their phone, and the app keeps an Elo ranking, player histories and multi-stage competitions.
 
-The interface is currently in German.
+<p align="center">
+  <img src="docs/screenshots/hero.png" alt="Ranking, duel entry, confirmation and competition screens" width="100%">
+</p>
+
+The interface is in German, with a light and a dark theme that follow the system setting.
 
 ## Features
 
-- **Sign-up by QR code:** the code contains an invite key. Accounts need only a username and a password.
-- **Duels with confirmation:** a result counts only after the opponent confirms it.
-- **Rated or casual:** casual games show up in the history but never change Elo.
-- **Elo ranking:** podium, form of the last 5 games, rating history and head-to-head per player.
-- **Competitions with stages:** for example a round robin group stage followed by a knockout final. The best players of each stage move on automatically.
-- **Fixed admins:** admin rights come from the server configuration, not from the app.
-- **Challenges:** challenge someone to a duel with discipline, race and a short message.
-- **Installable app with push:** add it to the home screen and get notified about challenges, results to confirm and new competition stages.
-- **Mobile first:** works in any phone browser.
+- **Sign-up by QR code.** The code contains an invite key. Accounts need only a username and a password, no e-mail.
+- **Duels with confirmation.** Tap once per won frame, send the result, and it counts only after the opponent confirms it with a swipe.
+- **Rated or casual.** Casual games show up in the history but never change Elo.
+- **Elo ranking.** Form of the last games, rating history, peak rating and head-to-head for every player.
+- **Competitions with stages.** For example a round robin group stage followed by a knockout final. The best players of each stage move on.
+- **Challenges.** Challenge someone with discipline, race length and a short message.
+- **Installable app with push.** Add it to the home screen and get notified about challenges, results to confirm and new competition stages.
+- **Fixed admins.** Admin rights come from the server configuration, not from the app.
+- **Mobile first.** Built for phones, works in any modern browser. Light and dark theme.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/light-ranking.png" alt="Ranking" width="200"><br><sub>Ranking</sub></td>
+    <td align="center"><img src="docs/screenshots/light-duel.png" alt="Entering a duel" width="200"><br><sub>Duel: one tap per frame</sub></td>
+    <td align="center"><img src="docs/screenshots/light-games.png" alt="Confirming a result" width="200"><br><sub>Swipe to confirm</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/light-competition.png" alt="Competition table" width="200"><br><sub>Competition stage</sub></td>
+    <td align="center"><img src="docs/screenshots/light-profile.png" alt="Player profile" width="200"><br><sub>Player profile</sub></td>
+    <td align="center"><img src="docs/screenshots/light-join.png" alt="Sign-up after scanning the QR code" width="200"><br><sub>Sign-up via QR code</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary><b>Dark theme</b></summary>
+<br>
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/dark-ranking.png" alt="Ranking, dark" width="200"><br><sub>Ranking</sub></td>
+    <td align="center"><img src="docs/screenshots/dark-duel.png" alt="Entering a duel, dark" width="200"><br><sub>Duel</sub></td>
+    <td align="center"><img src="docs/screenshots/dark-games.png" alt="Confirming a result, dark" width="200"><br><sub>Swipe to confirm</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/dark-competition.png" alt="Competition table, dark" width="200"><br><sub>Competition stage</sub></td>
+    <td align="center"><img src="docs/screenshots/dark-profile.png" alt="Player profile, dark" width="200"><br><sub>Player profile</sub></td>
+    <td align="center"><img src="docs/screenshots/dark-join.png" alt="Sign-up, dark" width="200"><br><sub>Sign-up</sub></td>
+  </tr>
+</table>
+</details>
+
+## How it works
+
+1. **Set up.** An admin prints the QR code from the profile page and hangs it next to the table.
+2. **Join.** New players scan it, choose a username and password and are in.
+3. **Play.** After a game one player opens *Duell*, picks the opponent and taps once per won frame.
+4. **Confirm.** The opponent gets a push message and swipes to confirm, or taps *Stimmt nicht*.
+5. **Rank.** Confirmed, rated games update the Elo ranking immediately. Competition tables and brackets fill themselves.
 
 ## Quick start with Docker
 
@@ -61,6 +105,8 @@ npm run dev:server                # API on :3000
 npm run dev                       # frontend on :5173, proxies /api
 ```
 
+Log in with `janik` / `billard123` after seeding to see the screens above with demo data.
+
 | Command | Purpose |
 | --- | --- |
 | `npm test` | Unit and API tests (Vitest) |
@@ -87,6 +133,8 @@ Ratings are always recalculated from the full match list, so deleting or late-co
 ```
 server/      API (Hono), SQLite schema, auth
 src/lib/     shared logic: Elo, ratings, competitions (used by server and app)
-src/         React app
+src/         React app (Tailwind CSS, light and dark theme tokens in src/index.css)
+public/      service worker and app icons
 scripts/     demo data
+docs/        screenshots for this README
 ```
