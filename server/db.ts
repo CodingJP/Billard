@@ -58,6 +58,31 @@ CREATE TABLE IF NOT EXISTS matches (
 );
 
 CREATE INDEX IF NOT EXISTS matches_stage ON matches(stage_id);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS challenges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  challenger INTEGER NOT NULL REFERENCES users(id),
+  opponent INTEGER NOT NULL REFERENCES users(id),
+  discipline TEXT NOT NULL,
+  race_to INTEGER NOT NULL,
+  rated INTEGER NOT NULL DEFAULT 1,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL
+);
 `
 
 export function openDatabase(path: string): DatabaseSync {

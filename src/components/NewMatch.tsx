@@ -6,7 +6,9 @@ import { DISCIPLINES, type AppState, type Discipline, type PlayerStats } from '.
 import { Avatar, Badge, Button, Card, Delta, EmptyState, ErrorText, SectionTitle, Segmented, Stepper } from './ui.tsx'
 
 interface StageOption {
-  stageId: number
+  stageId?: number
+  challengeId?: number
+  rated: boolean
   opponentId: number
   label: string
   raceTo: number
@@ -18,15 +20,32 @@ export function NewMatch({
   stats,
   onSubmit,
   onDone,
+  challengeId,
 }: {
   state: AppState
   stats: PlayerStats[]
   onSubmit: (input: NewMatchInput) => Promise<void>
   onDone: () => void
+  /** Preselects an accepted challenge, e.g. when coming from a push message. */
+  challengeId?: number | null
 }) {
   const me = state.me
-  const [opponentId, setOpponentId] = useState<number | null>(null)
-  const [stageOption, setStageOption] = useState<StageOption | null>(null)
+  const preset = state.challenges.find((c) => c.id === challengeId && c.status === 'accepted')
+  const [opponentId, setOpponentId] = useState<number | null>(
+    preset ? (preset.challenger === me.id ? preset.opponent : preset.challenger) : null,
+  )
+  const [stageOption, setStageOption] = useState<StageOption | null>(
+    preset
+      ? {
+          challengeId: preset.id,
+          opponentId: preset.challenger === me.id ? preset.opponent : preset.challenger,
+          label: 'Herausforderung',
+          raceTo: preset.raceTo,
+          discipline: preset.discipline,
+          rated: preset.rated,
+        }
+      : null,
+  )
   const [discipline, setDiscipline] = useState<Discipline>('8-Ball')
   const [raceTo, setRaceTo] = useState(5)
   const [rated, setRated] = useState(true)
@@ -38,6 +57,17 @@ export function NewMatch({
 
   const stageOptions = useMemo(() => {
     const list: StageOption[] = []
+    for (const c of state.challenges) {
+      if (c.status !== 'accepted') continue
+      list.push({
+        challengeId: c.id,
+        opponentId: c.challenger === me.id ? c.opponent : c.challenger,
+        label: 'Herausforderung',
+        raceTo: c.raceTo,
+        discipline: c.discipline,
+        rated: c.rated,
+      })
+    }
     for (const comp of state.competitions) {
       for (const stage of comp.stages) {
         if (stage.status !== 'running') continue
@@ -49,6 +79,7 @@ export function NewMatch({
             label: `${comp.name} · ${stage.name}`,
             raceTo: stage.raceTo,
             discipline: comp.discipline,
+            rated: true,
           })
         }
       }
@@ -64,7 +95,7 @@ export function NewMatch({
   const mine = stats.find((s) => s.player.id === me.id)!
   const opp = stats.find((s) => s.player.id === opponentId)
   const race = stageOption?.raceTo ?? raceTo
-  const isRated = stageOption ? true : rated
+  const isRated = stageOption ? stageOption.rated : rated
   const finished = (own === race) !== (other === race)
   const preview =
     opp && finished && isRated
@@ -110,7 +141,13 @@ export function NewMatch({
     try {
       await onSubmit(
         stageOption
-          ? { opponentId: opp.player.id, ownScore: own, opponentScore: other, stageId: stageOption.stageId }
+          ? {
+              opponentId: opp.player.id,
+              ownScore: own,
+              opponentScore: other,
+              stageId: stageOption.stageId,
+              challengeId: stageOption.challengeId,
+            }
           : { opponentId: opp.player.id, ownScore: own, opponentScore: other, discipline, raceTo, rated },
       )
       setSent(opp.player.name)
@@ -152,14 +189,15 @@ export function NewMatch({
     <div className="space-y-6">
       {stageOptions.length > 0 && (
         <section>
-          <SectionTitle>Deine Wettkampfspiele</SectionTitle>
+          <SectionTitle>Steht an</SectionTitle>
           <div className="space-y-2">
             {stageOptions.map((o) => {
               const name = stats.find((s) => s.player.id === o.opponentId)?.player.name ?? '?'
-              const active = stageOption?.stageId === o.stageId && stageOption.opponentId === o.opponentId
+              const active =
+                !!stageOption && stageOption.stageId === o.stageId && stageOption.challengeId === o.challengeId && stageOption.opponentId === o.opponentId
               return (
                 <button
-                  key={`${o.stageId}-${o.opponentId}`}
+                  key={`${o.stageId ?? 'c' + o.challengeId}-${o.opponentId}`}
                   onClick={() => chooseStage(o)}
                   className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left ring-1 transition ${
                     active ? 'bg-felt-500/20 ring-felt-400' : 'bg-felt-900/80 ring-white/5 hover:bg-white/5'
@@ -172,7 +210,7 @@ export function NewMatch({
                       {o.label} · {o.discipline} · Race to {o.raceTo}
                     </div>
                   </div>
-                  <span className="text-felt-400">🏆</span>
+                  <span className="text-felt-400">{o.challengeId ? '⚔️' : '🏆'}</span>
                 </button>
               )
             })}
@@ -207,7 +245,9 @@ export function NewMatch({
           <span className="text-white/70">
             {stageOption.discipline} · Race to {stageOption.raceTo}
           </span>
-          <Badge tone="good">Wettkampf · gewertet</Badge>
+          <Badge tone="good">
+            {stageOption.challengeId ? 'Herausforderung' : 'Wettkampf'} · {stageOption.rated ? 'gewertet' : 'ungewertet'}
+          </Badge>
         </Card>
       ) : (
         <section className="space-y-3">

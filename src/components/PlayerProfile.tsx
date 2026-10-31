@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import type { NewChallengeInput } from '../api.ts'
 import { START_ELO } from '../lib/elo.ts'
 import { headToHead } from '../lib/ratings.ts'
 import type { Match, Player, PlayerStats, RatingChange } from '../lib/types.ts'
+import { ChallengeForm } from './Challenges.tsx'
 import { MatchList } from './History.tsx'
-import { Avatar, Badge, Card, SectionTitle } from './ui.tsx'
+import { Avatar, Badge, Button, Card, SectionTitle } from './ui.tsx'
 
 export function PlayerProfile({
   stats,
@@ -13,6 +15,7 @@ export function PlayerProfile({
   changes,
   stageNames,
   onBack,
+  onChallenge,
   children,
 }: {
   stats: PlayerStats
@@ -22,8 +25,12 @@ export function PlayerProfile({
   changes: RatingChange[]
   stageNames: Map<number, string>
   onBack?: () => void
+  /** Shown on other players' profiles. */
+  onChallenge?: (input: NewChallengeInput) => Promise<void>
   children?: ReactNode
 }) {
+  const [challenging, setChallenging] = useState(false)
+  const [sent, setSent] = useState(false)
   const id = stats.player.id
   const own = matches.filter((m) => m.playerA === id || m.playerB === id)
   const history = [START_ELO, ...changes.filter((c) => c.playerId === id).map((c) => c.after)]
@@ -52,6 +59,25 @@ export function PlayerProfile({
           <p className="text-xs text-white/40">Spieler Nr. {stats.player.id}</p>
         </div>
       </div>
+
+      {onChallenge &&
+        (challenging ? (
+          <ChallengeForm
+            players={players}
+            meId={-1}
+            initialOpponent={stats.player.id}
+            onCancel={() => setChallenging(false)}
+            onSubmit={async (input) => {
+              await onChallenge(input)
+              setChallenging(false)
+              setSent(true)
+            }}
+          />
+        ) : (
+          <Button className="w-full" disabled={sent} onClick={() => setChallenging(true)}>
+            {sent ? `${stats.player.name} ist herausgefordert` : `⚔️ ${stats.player.name} herausfordern`}
+          </Button>
+        ))}
 
       <div className="grid grid-cols-4 gap-2">
         <Stat label="Gewertet" value={stats.matches} />

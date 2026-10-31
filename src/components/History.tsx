@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { formatDate, formatRelative } from '../format.ts'
 import { sortByPlayedAt } from '../lib/ratings.ts'
-import type { AppState, Match, Player, RatingChange } from '../lib/types.ts'
+import type { NewChallengeInput } from '../api.ts'
+import type { AppState, Challenge, Match, Player, RatingChange } from '../lib/types.ts'
+import { ChallengeForm, ChallengeList } from './Challenges.tsx'
 import { Avatar, Badge, Button, Card, ConfirmButton, Delta, EmptyState, ErrorText, SectionTitle } from './ui.tsx'
 
 const nameOf = (players: Player[], id: number) => players.find((p) => p.id === id)?.name ?? 'Unbekannt'
@@ -79,6 +81,7 @@ export function GamesScreen({
   onConfirm,
   onReject,
   onDelete,
+  challenges,
 }: {
   state: AppState
   changes: RatingChange[]
@@ -86,8 +89,16 @@ export function GamesScreen({
   onConfirm: (id: number) => Promise<void>
   onReject: (id: number) => Promise<void>
   onDelete: (id: number) => Promise<void>
+  challenges: {
+    create: (input: NewChallengeInput) => Promise<void>
+    accept: (id: number) => Promise<void>
+    decline: (id: number) => Promise<void>
+    cancel: (id: number) => Promise<void>
+    play: (challenge: Challenge) => void
+  }
 }) {
   const [error, setError] = useState('')
+  const [challenging, setChallenging] = useState(false)
   const me = state.me
   const pending = state.matches.filter((m) => m.status === 'pending')
   const forMe = pending.filter((m) => m.createdBy !== me.id && (m.playerA === me.id || m.playerB === me.id))
@@ -101,6 +112,30 @@ export function GamesScreen({
   return (
     <div className="space-y-6">
       <ErrorText>{error}</ErrorText>
+
+      {challenging ? (
+        <ChallengeForm
+          players={state.players}
+          meId={me.id}
+          onCancel={() => setChallenging(false)}
+          onSubmit={async (input) => {
+            await challenges.create(input)
+            setChallenging(false)
+          }}
+        />
+      ) : (
+        <Button variant="ghost" className="w-full" onClick={() => setChallenging(true)}>
+          ⚔️ Jemanden herausfordern
+        </Button>
+      )}
+
+      <ChallengeList
+        state={state}
+        onAccept={(id) => run(() => challenges.accept(id))}
+        onDecline={(id) => run(() => challenges.decline(id))}
+        onCancel={(id) => run(() => challenges.cancel(id))}
+        onPlay={challenges.play}
+      />
 
       {forMe.length > 0 && (
         <section>

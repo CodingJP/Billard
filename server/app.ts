@@ -7,6 +7,7 @@ import {
   DISCIPLINES,
   STAGE_FORMATS,
   type AppState,
+  type Challenge,
   type Competition,
   type Discipline,
   type Match,
@@ -25,6 +26,7 @@ import {
   verifyPassword,
 } from './auth.ts'
 import type { Config } from './config.ts'
+import type { PushPayload, PushService } from './push.ts'
 
 const SESSION_COOKIE = 'billard_session'
 const SESSION_DAYS = 60
@@ -44,7 +46,7 @@ const fail = (status: HttpError['status'], message: string): never => {
   throw new HttpError(status, message)
 }
 
-export function createApp(db: DatabaseSync, config: Config) {
+export function createApp(db: DatabaseSync, config: Config, push: PushService) {
   const app = new Hono<Env>()
   const limiter = new AttemptLimiter()
   const now = () => new Date().toISOString()
@@ -118,6 +120,41 @@ export function createApp(db: DatabaseSync, config: Config) {
       if (stage) return { competition: c, stage }
     }
     return null
+  }
+
+  const toChallenge = (r: Row): Challenge => ({
+    id: Number(r.id),
+    challenger: Number(r.challenger),
+    opponent: Number(r.opponent),
+    discipline: r.discipline as Discipline,
+    raceTo: Number(r.race_to),
+    rated: Number(r.rated) === 1,
+    message: r.message === null ? null : String(r.message),
+    status: r.status as Challenge['status'],
+    createdAt: String(r.created_at),
+  })
+
+  const openChallenges = (userId: number): Challenge[] =>
+    (
+      db
+        .prepare(
+          `SELECT * FROM challenges WHERE status IN ('pending', 'accepted') AND (challenger = ? OR opponent = ?)
+           ORDER BY created_at DESC`,
+        )
+        .all(userId, userId) as Row[]
+    ).map(toChallenge)
+
+  const challengeById = (id: number): Challenge | null => {
+    const row = db.prepare('SELECT * FROM challenges WHERE id = ?').get(id) as Row | undefined
+    return row ? toChallenge(row) : null
+  }
+
+  const nameOf = (id: number) =>
+    String((db.prepare('SELECT username FROM users WHERE id = ?').get(id) as Row | undefined)?.username ?? 'Jemand')
+
+  /** Push messages never block or fail a request. */
+  const notify = (userIds: number[], payload: PushPayload) => {
+    void push.notify(userIds, payload)
   }
 
   const setStagePlayers = (stageId: number, ids: number[]) => {
@@ -205,6 +242,7 @@ export function createApp(db: DatabaseSync, config: Config) {
     players: players(),
     matches: matches(),
     competitions: competitions(),
+    challenges: openChallenges(me.id),
   })
 
   app.onError((err, c) => {
@@ -216,6 +254,32 @@ export function createApp(db: DatabaseSync, config: Config) {
   // ---------- public routes ----------
 
   app.get('/api/info', (c) => c.json({ appName: config.appName }))
+
+  // The manifest carries the instance name, so every installation shows its own app name.
+  app.get('/manifest.webmanifest', (c) => {
+    c.header('content-type', 'application/manifest+json')
+    return c.body(
+      JSON.stringify({
+        name: config.appName,
+        short_name: config.appName.slice(0, 12),
+        description: 'Billard-Duelle, Elo-Rangliste und Wettkämpfe',
+        lang: 'de',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'portrait',
+        background_color: '#04170e',
+        theme_color: '#04170e',
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      }),
+    )
+  })
+
+  app.get('/api/push/key', (c) => c.json({ publicKey: push.publicKey }))
 
   app.post('/api/invite/check', async (c) => {
     const { key } = await body(c)
@@ -308,11 +372,20 @@ export function createApp(db: DatabaseSync, config: Config) {
     if (!userExists(opponent)) fail(404, 'Diesen Gegner gibt es nicht.')
 
     let stageId: number | null = null
+    let challengeId: number | null = null
     let disc: Discipline
     let raceTo: number
     let rated = data.rated !== false
 
-    if (data.stageId !== undefined && data.stageId !== null) {
+    if (data.challengeId !== undefined && data.challengeId !== null) {
+      challengeId = int(data.challengeId, 'Herausforderung', 1, Number.MAX_SAFE_INTEGER)
+      const ch = challengeById(challengeId) ?? fail(404, 'Diese Herausforderung gibt es nicht.')
+      const samePair = (ch.challenger === me.id && ch.opponent === opponent) || (ch.challenger === opponent && ch.opponent === me.id)
+      if (!samePair || ch.status !== 'accepted') fail(409, 'Diese Herausforderung ist nicht angenommen.')
+      disc = ch.discipline
+      raceTo = ch.raceTo
+      rated = ch.rated
+    } else if (data.stageId !== undefined && data.stageId !== null) {
       stageId = int(data.stageId, 'Etappe', 1, Number.MAX_SAFE_INTEGER)
       const found = findStage(stageId) ?? fail(404, 'Diese Etappe gibt es nicht.')
       if (!canPlayInStage(found.stage, matches(), me.id, opponent)) {
@@ -336,6 +409,13 @@ export function createApp(db: DatabaseSync, config: Config) {
          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       )
       .run(disc, raceTo, me.id, opponent, own, other, rated ? 1 : 0, me.id, now(), stageId)
+    if (challengeId !== null) db.prepare("UPDATE challenges SET status = 'played' WHERE id = ?").run(challengeId)
+    notify([opponent], {
+      title: 'Ergebnis bestätigen',
+      body: `${me.name} hat ${own}:${other} gegen dich eingetragen. Stimmt das?`,
+      url: '/?tab=games',
+      tag: 'confirm',
+    })
     return c.json({ match: matchById(Number(result.lastInsertRowid)), state: state(me) }, 201)
   })
 
@@ -346,6 +426,17 @@ export function createApp(db: DatabaseSync, config: Config) {
     const opponent = match.createdBy === match.playerA ? match.playerB : match.playerA
     if (opponent !== me.id) fail(403, 'Nur der Gegner kann dieses Ergebnis bestätigen oder ablehnen.')
     db.prepare('UPDATE matches SET status = ? WHERE id = ?').run(status, match.id)
+    const creatorScore = match.createdBy === match.playerA ? match.scoreA : match.scoreB
+    const otherScore = match.createdBy === match.playerA ? match.scoreB : match.scoreA
+    notify([match.createdBy], {
+      title: status === 'confirmed' ? 'Ergebnis bestätigt' : 'Ergebnis abgelehnt',
+      body:
+        status === 'confirmed'
+          ? `${me.name} hat dein ${creatorScore}:${otherScore} bestätigt.`
+          : `${me.name} hat dein ${creatorScore}:${otherScore} abgelehnt. Tragt es neu ein.`,
+      url: status === 'confirmed' ? '/?tab=ranking' : '/?tab=duel',
+      tag: `match-${match.id}`,
+    })
     return c.json(state(me))
   }
 
@@ -358,6 +449,96 @@ export function createApp(db: DatabaseSync, config: Config) {
     const ownPending = match.createdBy === me.id && match.status === 'pending'
     if (!ownPending && !me.isAdmin) fail(403, 'Nur Admins können bestätigte Spiele löschen.')
     db.prepare('DELETE FROM matches WHERE id = ?').run(match.id)
+    return c.json(state(me))
+  })
+
+  // ---------- push ----------
+
+  app.post('/api/push/subscribe', async (c) => {
+    const data = await body(c)
+    const keys = (data.keys ?? {}) as Row
+    if (typeof data.endpoint !== 'string' || !data.endpoint.startsWith('https://')) fail(400, 'Ungültiges Abo.')
+    if (typeof keys.p256dh !== 'string' || typeof keys.auth !== 'string') fail(400, 'Ungültiges Abo.')
+    push.subscribe(c.get('user').id, {
+      endpoint: String(data.endpoint),
+      keys: { p256dh: String(keys.p256dh), auth: String(keys.auth) },
+    })
+    return c.json({ ok: true })
+  })
+
+  app.post('/api/push/unsubscribe', async (c) => {
+    const data = await body(c)
+    if (typeof data.endpoint === 'string') {
+      db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?').run(data.endpoint, c.get('user').id)
+    }
+    return c.json({ ok: true })
+  })
+
+  app.post('/api/push/test', async (c) => {
+    await push.notify([c.get('user').id], {
+      title: config.appName,
+      body: 'Push-Nachrichten funktionieren. Viel Erfolg am Tisch!',
+      url: '/',
+      tag: 'test',
+    })
+    return c.json({ ok: true })
+  })
+
+  // ---------- challenges ----------
+
+  app.post('/api/challenges', async (c) => {
+    const me = c.get('user')
+    const data = await body(c)
+    const opponent = int(data.opponentId, 'Gegner', 1, Number.MAX_SAFE_INTEGER)
+    if (opponent === me.id) fail(400, 'Du kannst dich nicht selbst herausfordern.')
+    if (!userExists(opponent)) fail(404, 'Diesen Gegner gibt es nicht.')
+    const disc = discipline(data.discipline)
+    const raceTo = int(data.raceTo, 'Race-to', 1, 25)
+    const rated = data.rated !== false
+    const message = typeof data.message === 'string' && data.message.trim() ? data.message.trim().slice(0, 140) : null
+    const open = db
+      .prepare(
+        `SELECT 1 FROM challenges WHERE status IN ('pending', 'accepted')
+         AND ((challenger = ? AND opponent = ?) OR (challenger = ? AND opponent = ?))`,
+      )
+      .get(me.id, opponent, opponent, me.id)
+    if (open) fail(409, 'Zwischen euch läuft schon eine Herausforderung.')
+    db.prepare(
+      'INSERT INTO challenges (challenger, opponent, discipline, race_to, rated, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(me.id, opponent, disc, raceTo, rated ? 1 : 0, message, 'pending', now())
+    notify([opponent], {
+      title: `${me.name} fordert dich heraus`,
+      body: `${disc}, Race to ${raceTo}${rated ? '' : ', ungewertet'}${message ? `: „${message}“` : ''}`,
+      url: '/?tab=games',
+      tag: `challenge-${me.id}`,
+    })
+    return c.json(state(me), 201)
+  })
+
+  const answerChallenge = (status: 'accepted' | 'declined') => (c: Context<Env>) => {
+    const me = c.get('user')
+    const ch = challengeById(Number(c.req.param('id'))) ?? fail(404, 'Diese Herausforderung gibt es nicht.')
+    if (ch.opponent !== me.id) fail(403, 'Nur der Herausgeforderte kann antworten.')
+    if (ch.status !== 'pending') fail(409, 'Diese Herausforderung ist schon beantwortet.')
+    db.prepare('UPDATE challenges SET status = ? WHERE id = ?').run(status, ch.id)
+    notify([ch.challenger], {
+      title: status === 'accepted' ? 'Herausforderung angenommen' : 'Herausforderung abgelehnt',
+      body: status === 'accepted' ? `${me.name} ist dabei. Ab an den Tisch!` : `${me.name} hat gerade keine Zeit.`,
+      url: status === 'accepted' ? '/?tab=duel' : '/?tab=games',
+      tag: `challenge-${ch.id}`,
+    })
+    return c.json(state(me))
+  }
+
+  app.post('/api/challenges/:id/accept', answerChallenge('accepted'))
+  app.post('/api/challenges/:id/decline', answerChallenge('declined'))
+
+  app.delete('/api/challenges/:id', (c) => {
+    const me = c.get('user')
+    const ch = challengeById(Number(c.req.param('id'))) ?? fail(404, 'Diese Herausforderung gibt es nicht.')
+    if (ch.challenger !== me.id && ch.opponent !== me.id) fail(403, 'Das ist nicht deine Herausforderung.')
+    if (ch.status !== 'pending' && ch.status !== 'accepted') fail(409, 'Diese Herausforderung ist schon beendet.')
+    db.prepare("UPDATE challenges SET status = 'cancelled' WHERE id = ?").run(ch.id)
     return c.json(state(me))
   })
 
@@ -417,6 +598,12 @@ export function createApp(db: DatabaseSync, config: Config) {
       })
       return compId
     })
+    notify(seeded, {
+      title: `Neuer Wettkampf: ${name}`,
+      body: `Du bist dabei. ${stages[0].name} hat begonnen.`,
+      url: '/?tab=competitions',
+      tag: `competition-${id}`,
+    })
     return c.json({ id, state: state(c.get('user')) }, 201)
   })
 
@@ -427,17 +614,34 @@ export function createApp(db: DatabaseSync, config: Config) {
     const all = matches()
     if (!isStageComplete(current, all)) fail(409, 'Die Etappe ist noch nicht fertig gespielt.')
     const next = comp.stages.find((s) => s.position === current.position + 1)
+    const advancing = advancingPlayers(current, all)
     transaction(() => {
       db.prepare("UPDATE stages SET status = 'finished' WHERE id = ?").run(current.id)
       // Withdraw results that were never confirmed, so they cannot change a closed stage.
       db.prepare("UPDATE matches SET status = 'rejected' WHERE stage_id = ? AND status = 'pending'").run(current.id)
       if (next) {
-        setStagePlayers(next.id, advancingPlayers(current, all))
+        setStagePlayers(next.id, advancing)
         db.prepare("UPDATE stages SET status = 'running' WHERE id = ?").run(next.id)
       } else {
         db.prepare("UPDATE competitions SET status = 'finished' WHERE id = ?").run(comp.id)
       }
     })
+    if (next) {
+      notify(advancing, {
+        title: `${comp.name}: Du bist weiter!`,
+        body: `${next.name} beginnt jetzt.`,
+        url: '/?tab=competitions',
+        tag: `competition-${comp.id}`,
+      })
+    } else {
+      const everyone = comp.stages[0].players
+      notify(everyone, {
+        title: `${comp.name} ist entschieden`,
+        body: `${nameOf(advancing[0])} gewinnt den Wettkampf.`,
+        url: '/?tab=competitions',
+        tag: `competition-${comp.id}`,
+      })
+    }
     return c.json(state(c.get('user')))
   })
 

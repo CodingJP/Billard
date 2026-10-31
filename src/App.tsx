@@ -6,9 +6,11 @@ import { GamesScreen } from './components/History.tsx'
 import { AccountCard, InviteCard } from './components/MeScreen.tsx'
 import { NewMatch } from './components/NewMatch.tsx'
 import { PlayerProfile } from './components/PlayerProfile.tsx'
+import { PushCard, PushPrompt } from './components/PushSettings.tsx'
 import { Ranking } from './components/Ranking.tsx'
 import { computeRatings, ranking } from './lib/ratings.ts'
 import type { AppState } from './lib/types.ts'
+import { syncPushSubscription } from './push.ts'
 
 type Tab = 'ranking' | 'competitions' | 'duel' | 'games' | 'me'
 
@@ -19,6 +21,14 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'games', label: 'Spiele', icon: '🎱' },
   { id: 'me', label: 'Profil', icon: '👤' },
 ]
+
+const isTab = (value: string | null): value is Tab => TABS.some((t) => t.id === value)
+
+/** Deep links like /?tab=games come from push notifications. */
+function tabFromUrl(url: string): Tab | null {
+  const tab = new URL(url, window.location.origin).searchParams.get('tab')
+  return isTab(tab) ? tab : null
+}
 
 const TITLES: Record<Tab, string> = {
   ranking: 'Rangliste',
@@ -32,8 +42,27 @@ export default function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [appName, setAppName] = useState('Billard')
   const [phase, setPhase] = useState<'loading' | 'auth' | 'ready' | 'offline'>('loading')
-  const [tab, setTab] = useState<Tab>('ranking')
+  const [tab, setTab] = useState<Tab>(() => tabFromUrl(window.location.href) ?? 'ranking')
   const [profileId, setProfileId] = useState<number | null>(null)
+  const [challengeToPlay, setChallengeToPlay] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (tabFromUrl(window.location.href)) window.history.replaceState(null, '', '/')
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'navigate') return
+      const next = tabFromUrl(String(event.data.url))
+      if (next) {
+        setProfileId(null)
+        setTab(next)
+      }
+    }
+    navigator.serviceWorker?.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage)
+  }, [])
+
+  useEffect(() => {
+    if (phase === 'ready') syncPushSubscription()
+  }, [phase])
 
   const load = useCallback(async () => {
     try {
@@ -106,12 +135,13 @@ export default function App() {
   }
 
   const me = state.me
-  const toConfirm = state.matches.filter(
-    (m) => m.status === 'pending' && m.createdBy !== me.id && (m.playerA === me.id || m.playerB === me.id),
-  ).length
+  const toConfirm =
+    state.matches.filter((m) => m.status === 'pending' && m.createdBy !== me.id && (m.playerA === me.id || m.playerB === me.id))
+      .length + state.challenges.filter((c) => c.status === 'pending' && c.opponent === me.id).length
 
   const go = (next: Tab) => {
     setProfileId(null)
+    setChallengeToPlay(null)
     setTab(next)
     window.scrollTo({ top: 0 })
   }
@@ -143,9 +173,13 @@ export default function App() {
             changes={ratings.changes}
             stageNames={stageNames}
             onBack={() => setProfileId(null)}
+            onChallenge={profile.player.id === me.id ? undefined : async (input) => setState(await api.challenge(input))}
           />
         ) : tab === 'ranking' ? (
-          <Ranking rows={rows} meId={me.id} onSelect={setProfileId} />
+          <div className="space-y-4">
+            <PushPrompt />
+            <Ranking rows={rows} meId={me.id} onSelect={setProfileId} />
+          </div>
         ) : tab === 'competitions' ? (
           <CompetitionsScreen
             state={state}
@@ -159,6 +193,8 @@ export default function App() {
           />
         ) : tab === 'duel' ? (
           <NewMatch
+            key={challengeToPlay ?? 'free'}
+            challengeId={challengeToPlay}
             state={state}
             stats={rows}
             onSubmit={async (input) => setState((await api.addMatch(input)).state)}
@@ -172,6 +208,16 @@ export default function App() {
             onConfirm={async (id) => setState(await api.confirm(id))}
             onReject={async (id) => setState(await api.reject(id))}
             onDelete={async (id) => setState(await api.deleteMatch(id))}
+            challenges={{
+              create: async (input) => setState(await api.challenge(input)),
+              accept: async (id) => setState(await api.acceptChallenge(id)),
+              decline: async (id) => setState(await api.declineChallenge(id)),
+              cancel: async (id) => setState(await api.cancelChallenge(id)),
+              play: (c) => {
+                go('duel')
+                setChallengeToPlay(c.id)
+              },
+            }}
           />
         ) : profile ? (
           <PlayerProfile
@@ -182,6 +228,7 @@ export default function App() {
             changes={ratings.changes}
             stageNames={stageNames}
           >
+            <PushCard />
             {me.isAdmin && <InviteCard appName={state.appName} />}
             <AccountCard onLogout={logout} />
           </PlayerProfile>

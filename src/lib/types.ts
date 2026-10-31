@@ -85,10 +85,26 @@ export interface PlayerStats {
   bestStreak: number
 }
 
+export type ChallengeStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'played'
+
+export interface Challenge {
+  id: number
+  challenger: number
+  opponent: number
+  discipline: Discipline
+  raceTo: number
+  rated: boolean
+  message: string | null
+  status: ChallengeStatus
+  createdAt: string
+}
+
 export interface AppState {
   appName: string
   me: Player
   players: Player[]
   matches: Match[]
   competitions: Competition[]
+  /** Open challenges (pending or accepted) that involve the current player. */
+  challenges: Challenge[]
 }

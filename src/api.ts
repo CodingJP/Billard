@@ -28,6 +28,15 @@ export interface NewMatchInput {
   raceTo?: number
   rated?: boolean
   stageId?: number
+  challengeId?: number
+}
+
+export interface NewChallengeInput {
+  opponentId: number
+  discipline: Discipline
+  raceTo: number
+  rated: boolean
+  message?: string
 }
 
 export interface NewCompetitionInput {
@@ -50,6 +59,14 @@ export const api = {
   confirm: (id: number) => request<AppState>('POST', `/api/matches/${id}/confirm`),
   reject: (id: number) => request<AppState>('POST', `/api/matches/${id}/reject`),
   deleteMatch: (id: number) => request<AppState>('DELETE', `/api/matches/${id}`),
+  pushKey: () => request<{ publicKey: string }>('GET', '/api/push/key'),
+  pushSubscribe: (sub: PushSubscriptionJSON) => request<{ ok: true }>('POST', '/api/push/subscribe', sub),
+  pushUnsubscribe: (endpoint: string) => request<{ ok: true }>('POST', '/api/push/unsubscribe', { endpoint }),
+  pushTest: () => request<{ ok: true }>('POST', '/api/push/test'),
+  challenge: (input: NewChallengeInput) => request<AppState>('POST', '/api/challenges', input),
+  acceptChallenge: (id: number) => request<AppState>('POST', `/api/challenges/${id}/accept`),
+  declineChallenge: (id: number) => request<AppState>('POST', `/api/challenges/${id}/decline`),
+  cancelChallenge: (id: number) => request<AppState>('DELETE', `/api/challenges/${id}`),
   invite: () => request<{ joinUrl: string }>('GET', '/api/admin/invite'),
   createCompetition: (input: NewCompetitionInput) => request<{ id: number; state: AppState }>('POST', '/api/competitions', input),
   advance: (id: number) => request<AppState>('POST', `/api/competitions/${id}/advance`),

@@ -12,7 +12,9 @@ The interface is currently in German.
 - **Elo ranking:** podium, form of the last 5 games, rating history and head-to-head per player.
 - **Competitions with stages:** for example a round robin group stage followed by a knockout final. The best players of each stage move on automatically.
 - **Fixed admins:** admin rights come from the server configuration, not from the app.
-- **Mobile first:** works in any phone browser and can be added to the home screen.
+- **Challenges:** challenge someone to a duel with discipline, race and a short message.
+- **Installable app with push:** add it to the home screen and get notified about challenges, results to confirm and new competition stages.
+- **Mobile first:** works in any phone browser.
 
 ## Quick start with Docker
 
@@ -36,8 +38,16 @@ All data lives in one SQLite file in `./data`. Back up that folder.
 | `COOKIE_SECURE` | `true` when served over HTTPS | `false` |
 | `PORT` | HTTP port | `3000` |
 | `DATABASE_PATH` | SQLite file | `./data/billard.sqlite` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Keys for push messages | generated once, stored in the database |
+| `VAPID_SUBJECT` | Contact for push services (`mailto:` or `https:`) | `PUBLIC_URL` if https |
 
 To revoke the QR code, change `INVITE_KEY` and restart. Existing accounts keep working.
+
+## Push notifications
+
+Push needs HTTPS (or `localhost` during development). Players switch it on under **Profil**. On iPhone and iPad (iOS 16.4 or newer) push only works after adding the app to the home screen via Safari's share menu; the app explains this to the user.
+
+Players get a push when someone challenges them, answers their challenge, enters a result they need to confirm, confirms or rejects their result, or when they reach a new competition stage.
 
 ## Development
 

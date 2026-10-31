@@ -6,12 +6,15 @@
 import { createApp } from '../server/app.ts'
 import { loadConfig } from '../server/config.ts'
 import { openDatabase } from '../server/db.ts'
+import { PushService } from '../server/push.ts'
 
 const PASSWORD = 'billard123'
 const NAMES = ['janik', 'anna', 'ben', 'cem', 'dana', 'elif', 'finn', 'greta']
 
 const config = loadConfig()
-const app = createApp(openDatabase(config.databasePath), config)
+const db = openDatabase(config.databasePath)
+// The demo never sends real push messages.
+const app = createApp(db, config, new PushService(db, async () => true, ''))
 
 async function call(method: string, path: string, cookie: string | undefined, body?: unknown) {
   const res = await app.request(path, {
@@ -57,6 +60,9 @@ await duel(3, 1, 3, 2, { discipline: '9-Ball', raceTo: 3, rated: false })
 // Results waiting for confirmation.
 await duel(1, 0, 5, 2, {}, false)
 await duel(0, 5, 5, 1, {}, false)
+
+// An open challenge for the admin.
+await call('POST', '/api/challenges', users[2].cookie, { opponentId: users[0].id, discipline: '9-Ball', raceTo: 4, rated: true, message: 'Revanche für letzte Woche!' })
 
 const admin = users[0]
 const created = await call('POST', '/api/competitions', admin.cookie, {
